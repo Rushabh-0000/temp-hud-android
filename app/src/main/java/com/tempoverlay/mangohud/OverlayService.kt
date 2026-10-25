@@ -246,7 +246,8 @@ class OverlayService : Service() {
         private fun rowWidth(row: OverlayRow): Float {
             configureTextPaint(10f)
             val labelWidth = textPaint.measureText(row.label)
-            val valueWidth = textPaint.measureText(valueText(row))
+            // Reserve just enough for the longest normal temperature, so the first live poll never clips.
+            val valueWidth = textPaint.measureText("100.0°C")
             return labelWidth + u(VALUE_GAP_DP) + valueWidth
         }
 
