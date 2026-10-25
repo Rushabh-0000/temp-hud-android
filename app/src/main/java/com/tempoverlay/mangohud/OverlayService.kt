@@ -199,8 +199,10 @@ class OverlayService : Service() {
 
         fun update(nextConfig: HudConfig, nextSnapshot: TemperatureSnapshot) {
             val previous = config
+            val previousRows = rows(previous, snapshot)
+            val nextRows = rows(nextConfig, nextSnapshot)
             val layoutChanged = previous.scalePercent != nextConfig.scalePercent ||
-                rows(previous, snapshot).size != rows(nextConfig, nextSnapshot).size ||
+                previousRows.map { it.label } != nextRows.map { it.label } ||
                 previous.textColorIndex != nextConfig.textColorIndex ||
                 previous.textBrightness != nextConfig.textBrightness ||
                 previous.backgroundOpacity != nextConfig.backgroundOpacity
