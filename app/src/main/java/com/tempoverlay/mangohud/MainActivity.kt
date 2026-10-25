@@ -72,11 +72,14 @@ class MainActivity : ComponentActivity() {
                     onPrimary = Bg,
                     onBackground = TextMain,
                     onSurface = TextMain
-                ),
-                typography = Typography(defaultFontFamily = FontFamily.SansSerif)
+                )
             ) {
-                Surface(Modifier.fillMaxSize(), color = Bg) {
-                    TempHudScreen()
+                CompositionLocalProvider(
+                    LocalTextStyle provides LocalTextStyle.current.copy(fontFamily = FontFamily.SansSerif)
+                ) {
+                    Surface(Modifier.fillMaxSize(), color = Bg) {
+                        TempHudScreen()
+                    }
                 }
             }
         }
