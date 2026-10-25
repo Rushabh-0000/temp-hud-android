@@ -180,11 +180,11 @@ class OverlayService : Service() {
 
     private fun rows(config: HudConfig, snapshot: TemperatureSnapshot): List<OverlayTempRow> = buildList {
         if (config.showCpuTemp) add(OverlayTempRow("CPU", snapshot.cpuOverall?.celsius))
+        if (config.showGpuTemp) add(OverlayTempRow("GPU", snapshot.gpuOverall?.celsius))
         for (core in 0..7) {
             val key = "core${core}Temp"
             if (config.isEnabled(key)) add(OverlayTempRow("CPU $core", snapshot.cpuCores.getOrNull(core)?.celsius))
         }
-        if (config.showGpuTemp) add(OverlayTempRow("GPU", snapshot.gpuOverall?.celsius))
         snapshot.gpuSensors.filter { config.isEnabled(HudConfig.GPU_SENSOR_PREFIX + it.id) }
             .forEachIndexed { index, sensor -> add(OverlayTempRow("GPU ${index + 1}", sensor.celsius)) }
     }

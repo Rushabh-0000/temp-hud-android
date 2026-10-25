@@ -4,7 +4,7 @@ Compact, temperature-only Android overlay inspired by MangoHud, written in Kotli
 
 ## Overlay and selection
 
-- Default rows are overall `CPU` and overall `GPU` temperature. Per-core CPU and individual GPU-labelled thermal sensors are off until selected.
+- Version 0.4.0. Default rows are overall `CPU` and overall `GPU` temperature at the top. Per-core CPU and individual GPU-labelled thermal sensors appear underneath only when selected.
 - Overall CPU/GPU are arithmetic averages across unique readable sources. Qualcomm paired `-usr` and `-step` thermal zones for the same source are deduplicated, preferring `-usr`.
 - The HUD has no title, LIVE badge, border, load, or frequency rows. Heat-coloured values move green → yellow → orange → red as temperature increases.
 - Background opacity defaults to zero for text-only rendering. Text colour, brightness, size, refresh interval, and optional background opacity are adjustable.

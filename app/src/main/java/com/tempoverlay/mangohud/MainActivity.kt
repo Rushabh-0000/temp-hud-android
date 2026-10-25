@@ -141,11 +141,11 @@ private fun TempHudScreen() {
 
     val previewRows = buildList<Pair<String, String>> {
         if (config.showCpuTemp) add("cpuTemp" to "CPU")
+        if (config.showGpuTemp) add("gpuTemp" to "GPU")
         for (core in 0..7) {
             val key = "core${core}Temp"
             if (config.isEnabled(key)) add(key to "CPU $core")
         }
-        if (config.showGpuTemp) add("gpuTemp" to "GPU")
         snapshot.gpuSensors.filter { config.isEnabled(HudConfig.GPU_SENSOR_PREFIX + it.id) }
             .forEachIndexed { index, sensor ->
                 add((HudConfig.GPU_SENSOR_PREFIX + sensor.id) to "GPU SENSOR ${index + 1}")
