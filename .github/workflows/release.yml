@@ -71,7 +71,7 @@ jobs:
         run: |
           latest="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1 --json tagName --jq '.[0].tagName // empty' || true)"
           base="${latest#v}"
-          if [[ ! "$base" =~ ^[0-9]+.[0-9]+.[0-9]+$ ]]; then base="0.1.0"; fi
+          if [[ ! "$base" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]; then base="0.1.0"; fi
           IFS='.' read -r major minor patch <<< "$base"
           case "${{ inputs.bump }}" in
             major) major=$((major + 1)); minor=0; patch=0 ;;
