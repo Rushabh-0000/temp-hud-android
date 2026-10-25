@@ -69,7 +69,7 @@ kotlin {
 
 dependencies {
     // Stable Compose line compatible with the hosted API 36 build SDK.
-    implementation(platform("androidx.compose:compose-bom:2026.07.00"))
+    implementation(platform("androidx.compose:compose-bom:2026.06.00"))
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.foundation:foundation")
