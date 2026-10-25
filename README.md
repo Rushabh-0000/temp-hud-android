@@ -1,48 +1,60 @@
 # Temp HUD for Android
 
-A lightweight MangoHud-inspired floating performance overlay for Android, initially targeted at Realme 9 5G Speed Edition (Snapdragon 778G, Android 13).
+A low-overhead MangoHud-inspired floating CPU/thermal HUD, initially targeted at the Realme 9 5G Speed Edition (Snapdragon 778G, Android 13).
 
-## Features
-- Draggable floating overlay with CPU-core utilization, readable clock speed, and available real thermal-zone readings.
-- Sensor polling off the UI thread at a conservative interval.
-- Private GitHub release checking inside the app. Downloaded update packages are SHA-256 verified, then handed to Android's package installer.
-- Temporary update APKs are cleared after Android broadcasts that the package replacement completed. Stale cache files are cleaned on next app launch.
-- Signed, minified and resource-shrunk release APKs; **no debug APK is published**.
-- Every Temp HUD workflow shares one concurrency group; a new workflow cancels an older running Temp HUD workflow.
-- Temporary GitHub Actions artifacts are deleted after a release succeeds. GitHub Release assets are kept because the in-app updater needs them.
+## Current design
+- Native Android UI and services written in Kotlin.
+- Kotlin DSL build scripts: `build.gradle.kts`, `settings.gradle.kts`, and `app/build.gradle.kts`.
+- Draggable overlay with per-logical-core CPU utilization, readable clock speeds, and actual thermal-zone readings when firmware permissions allow them.
+- Sensor polling runs on a low-priority background thread every 1.5 seconds.
+- Private GitHub release checking in-app. Update APKs are SHA-256 checked before passing to Android's installer.
+- App-owned temporary APKs are cleaned after Android confirms the package update; old temp files are removed on next launch.
+- Release workflow builds a signed, minified, resource-shrunk APK and attaches it with update metadata to a GitHub Release.
+- All Temp HUD workflows share a concurrency group; starting a new run cancels an older active Temp HUD run.
+- Temporary Actions artifacts are deleted after successful verification/release. GitHub Release assets are retained for the updater.
 
-## Device and sensor limits
-Android does not guarantee access to an individual temperature sensor per CPU core. Temp HUD never fabricates temperatures. Per-core temperature stays N/A when no reliable sensor mapping exists; real readable thermal zones are listed separately. CPU frequency files also vary by firmware and SELinux policy.
+## Latest compatible stable toolchain (checked 25 Oct 2026)
+This project deliberately uses a compatible stable set instead of independently selecting incompatible "latest" versions:
+- Android Gradle Plugin 9.3.1 — Kotlin 2.4.21's documented maximum fully supported AGP version. AGP 9.4.1 is newer, but outside that official compatibility range.
+- Kotlin 2.4.21 — current stable Kotlin release.
+- Gradle 9.7.0 — Kotlin 2.4.21's maximum fully supported Gradle version. Gradle 9.8.2 is newer, but outside that fully supported range.
+- JDK 25
+- Android SDK compile/target API 36 (minimum OS Android 8.0 / API 26)
+- AndroidX Core 1.18.0, the newest stable Core compatible with the SDK platform available on the hosted runner. Core 1.19.1 requires compiling against API 37, which the runner's SDK package repository did not provide at the time of verification.
 
-## First-time setup
+References:
+- Android Gradle Plugin compatibility: https://developer.android.com/build/releases/about-agp
+- Kotlin Gradle Plugin compatibility: https://kotlinlang.org/docs/gradle-configure-project.html
+- Gradle releases: https://gradle.org/releases/
+- AndroidX Core release notes: https://developer.android.com/jetpack/androidx/releases/core
+- Kotlin releases: https://kotlinlang.org/docs/releases.html
 
-**Make the repository private before creating the signing key.** Current app package/source can be seen by anyone while the repository is public.
+## Sensor limits
+Android does not promise ordinary apps access to a true temperature sensor for each CPU core. Temp HUD never fabricates temperatures. Per-core temperature stays unavailable when no reliable matching sensor exists; readable hardware thermal zones are listed separately. CPU frequency files also vary by firmware and SELinux policy. FPS and GPU telemetry are not implemented yet.
 
-1. Open Actions → **One-time Release Signing Key Setup** → Run workflow.
-2. Download the `temp-hud-signing-bootstrap` artifact before it expires (one day). The ZIP contains `signing-setup.txt` and `temp-hud-release.p12`.
-3. Open `signing-setup.txt` and add these four values as repository Actions secrets under Settings → Secrets and variables → Actions:
+## Release setup — required before the first release
+
+**The repository must be private before generating or storing release signing material.** The current GitHub API check showed it was still public. The signing and release workflows fail closed while it remains public.
+
+1. In GitHub repository Settings → General → Danger Zone, change visibility to **Private**.
+2. Open Actions → **One-time Release Signing Key Setup** → Run workflow.
+3. Download the `temp-hud-signing-bootstrap` artifact before it expires (one day). It contains `signing-setup.txt` and `temp-hud-release.p12`.
+4. Add the four values listed in `signing-setup.txt` as repository Actions secrets under Settings → Secrets and variables → Actions:
    - `ANDROID_KEYSTORE_BASE64`
    - `ANDROID_KEYSTORE_PASSWORD`
    - `ANDROID_KEY_ALIAS`
    - `ANDROID_KEY_PASSWORD`
-4. Keep an offline backup of `temp-hud-release.p12` and its password. Every future update must use the **same** signing key. Never commit the key, include it in a release asset, or send the secret values in chat.
-5. Open Actions → **Release Temp HUD** → Run workflow. Choose patch, minor, or major. It calculates the next semantic version and a monotonically increasing Android `versionCode`, signs/shrinks the release APK, and creates a GitHub Release containing `app-release.apk` and `update.json`.
+5. Keep a secure offline backup of `temp-hud-release.p12` and its password. Every future release must use this same key. Never commit the key or share the values in chat.
+6. Open Actions → **Release Temp HUD** → Run workflow; choose patch, minor, or major. The workflow calculates the semantic version and increasing Android `versionCode`, builds/signs/shrinks the release APK, and creates a GitHub Release with `app-release.apk` and `update.json`.
 
-The signing-key and release workflows check that this repository is private before handling signing material.
+The release workflow is intentionally manual so a source edit does not accidentally publish an app release. It automatically selects the version once you choose the bump type.
 
-## In-app updates for a private repository
-The updater needs a fine-grained GitHub personal access token entered on your phone, limited to this repository with **Contents: Read-only** permission (Metadata read is required by GitHub and is normally granted automatically). It is encrypted with an Android Keystore-backed AES-GCM key, stays on-device, and is not bundled into the APK or source. Never share or commit that token.
+## In-app updates for a private repo
+The updater needs a fine-grained GitHub personal access token entered on the phone, restricted to this repository with Contents: Read-only permission (GitHub's required metadata access is read-only). It is encrypted with an Android Keystore-backed AES-GCM key, remains on-device, and is not bundled in source or the APK. Never commit or share the token.
 
-The update checker reads the latest GitHub Release and its metadata. Before installing, it verifies the APK against the SHA-256 in `update.json`. Android still displays its normal installer/confirmation UI; the app cannot silently install a new version on a standard non-rooted phone. Once Android reports the app update completed, Temp HUD deletes the cached APK. If installation is cancelled, it keeps the file until it becomes stale rather than deleting a file that the installer might still need.
+The updater reads the latest GitHub Release, fetches `update.json`, downloads the release APK, checks SHA-256, and opens Android's installer. Android still requires the user to approve installation on a standard non-rooted phone. Once Android broadcasts `MY_PACKAGE_REPLACED`, the app deletes its cached update APK. If installation is cancelled, the APK is only removed after it becomes stale.
 
-If you previously installed the earlier prototype APK, uninstall it once before installing the first signed release because Android debug and release signatures do not match. Subsequent releases built with the same key update normally.
+If the old prototype/debug APK is already installed, uninstall it before the first signed install because its signing identity differs. Future signed releases built with the same key can update normally.
 
-## Build toolchain
-Stable versions verified on 25 October 2026:
-- Android Gradle Plugin 9.4.1
-- Gradle 9.8.1
-- JDK 25
-- Android SDK 36.1 (target SDK 36)
-- AndroidX Core 1.18.0
-
-The CI workflow compiles the release variant without publishing an unsigned APK. Only the **Release Temp HUD** workflow publishes signed, installable release APKs.
+## Cloud build
+The Verify Android Release Build workflow compiles the optimized release variant but does not publish an unsigned APK. Only the Release Temp HUD workflow publishes signed release assets.
