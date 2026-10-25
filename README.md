@@ -16,7 +16,7 @@ Compact MangoHud-inspired Android performance overlay, written in Kotlin with a 
 
 - Overall CPU temperature is the maximum readable thermal-zone temperature whose type is explicitly CPU/CPUSS-labelled.
 - Overall GPU temperature uses GPU/GPUSS-labelled zones only.
-- CPU 0-7 temperatures require a thermal zone whose name explicitly identifies that core (such as `cpu0` or `cpu-core0`). Generic labels like `cpu-1-3-step` are not assumed to mean a core number.
+- Qualcomm names such as `cpu-0-2-usr` and `cpu-1-3-step` encode cluster and local-core indexes. For this target 8-core layout, cluster 0 maps to logical CPU 0-3 and cluster 1 maps to logical CPU 4-7. Other sensors are mapped only when their name explicitly identifies a logical core.
 - If the vendor kernel does not expose per-core temperature sensors, each selected core row remains `N/A`. The app does not duplicate overall CPU temperature across all eight cores or relabel modem/display/battery/skin sensors as CPU/GPU.
 
 Android's public HardwarePropertiesManager API may throw SecurityException for ordinary apps; the app therefore uses readable thermal-zone interfaces and reports unavailable values as N/A rather than relying on privileged APIs.
