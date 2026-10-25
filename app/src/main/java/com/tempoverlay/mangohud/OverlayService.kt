@@ -205,6 +205,7 @@ class OverlayService : Service() {
                 previousRows.map { it.label } != nextRows.map { it.label } ||
                 previous.textColorIndex != nextConfig.textColorIndex ||
                 previous.textBrightness != nextConfig.textBrightness ||
+                previous.highlightTemperatures != nextConfig.highlightTemperatures ||
                 previous.backgroundOpacity != nextConfig.backgroundOpacity
             val positionChanged = previous.positionXDp != nextConfig.positionXDp || previous.positionYDp != nextConfig.positionYDp
             val touchChanged = previous.lockPosition != nextConfig.lockPosition
@@ -219,7 +220,7 @@ class OverlayService : Service() {
                 params.height = WindowManager.LayoutParams.WRAP_CONTENT
                 if (touchChanged) {
                     params.flags = makeFlags(nextConfig.lockPosition)
-                    params.alpha = if (nextConfig.lockPosition) 0.79f else 1f
+                    params.alpha = 1f
                 }
                 if (positionChanged) {
                     params.x = dp(nextConfig.positionXDp.toFloat()).coerceIn(0, maxX())
@@ -275,8 +276,10 @@ class OverlayService : Service() {
                 val baseline = (index * u(ROW_HEIGHT_DP) + u(11.5f)).toFloat()
                 val x = u(HORIZONTAL_PADDING_DP).toFloat()
                 val valueX = x + textPaint.measureText(row.label) + u(VALUE_GAP_DP)
-                val valueColor = row.reading?.celsius?.let { HudPalette.heatColor(it, config.textBrightness) }
-                    ?: Color.argb((config.textBrightness * 175 / 100).coerceIn(50, 175), 205, 212, 222)
+                val valueColor = if (config.highlightTemperatures) {
+                    row.reading?.celsius?.let { HudPalette.heatColor(it, config.textBrightness) }
+                        ?: Color.rgb(205, 212, 222)
+                } else HudPalette.labelColor(config.textColorIndex, config.textBrightness)
                 drawLegibleText(canvas, row.label, x, baseline, labelColor)
                 drawLegibleText(canvas, valueText(row), valueX, baseline, valueColor)
             }

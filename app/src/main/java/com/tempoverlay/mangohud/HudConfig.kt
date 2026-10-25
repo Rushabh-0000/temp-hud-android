@@ -29,6 +29,7 @@ data class HudConfig(
     val scalePercent: Int = 100,
     val textColorIndex: Int = 0,
     val textBrightness: Int = 100,
+    val highlightTemperatures: Boolean = true,
     val lockPosition: Boolean = false,
     val positionXDp: Int = 8,
     val positionYDp: Int = 100
@@ -59,6 +60,7 @@ data class HudConfig(
             .putInt("scale_percent", scalePercent.coerceIn(70, 115))
             .putInt("text_color_index", textColorIndex.coerceIn(0, HudPalette.textOptions.lastIndex))
             .putInt("text_brightness", textBrightness.coerceIn(35, 100))
+            .putBoolean("highlight_temperatures", highlightTemperatures)
             .putBoolean("lock_position", lockPosition)
             .putInt("position_x_dp", positionXDp.coerceAtLeast(0))
             .putInt("position_y_dp", positionYDp.coerceAtLeast(0))
@@ -152,6 +154,7 @@ data class HudConfig(
                 scalePercent = p.getInt("scale_percent", 100).coerceIn(70, 115),
                 textColorIndex = p.getInt("text_color_index", 0).coerceIn(0, HudPalette.textOptions.lastIndex),
                 textBrightness = p.getInt("text_brightness", 100).coerceIn(35, 100),
+                highlightTemperatures = p.getBoolean("highlight_temperatures", true),
                 lockPosition = p.getBoolean("lock_position", false),
                 positionXDp = p.getInt("position_x_dp", 8).coerceAtLeast(0),
                 positionYDp = p.getInt("position_y_dp", 100).coerceAtLeast(0)
