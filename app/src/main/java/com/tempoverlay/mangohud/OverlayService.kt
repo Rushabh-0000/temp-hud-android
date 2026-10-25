@@ -17,6 +17,7 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
 import android.os.Process
+import android.os.SystemClock
 import android.provider.Settings
 import android.view.Gravity
 import android.view.MotionEvent
@@ -48,10 +49,18 @@ class OverlayService : Service() {
         override fun run() {
             val target = hudView ?: return
             val handler = pollingHandler ?: return
+            val startedAt = SystemClock.uptimeMillis()
             val config = HudConfig.load(this@OverlayService)
             val snapshot = sensorReader.sample(config)
             target.post { if (hudView === target) target.update(config, snapshot) }
-            handler.postDelayed(this, config.refreshMs.toLong())
+
+            // Keep the configured interval as the poll period, rather than adding it
+            // after sensor-reading/render-queue work. If a poll overruns, yield one frame
+            // instead of immediately spinning at 100% CPU.
+            val periodMs = config.refreshMs.toLong()
+            val dueAt = startedAt + periodMs
+            val now = SystemClock.uptimeMillis()
+            handler.postAtTime(this, if (dueAt > now) dueAt else now + 16L)
         }
     }
 
@@ -137,12 +146,10 @@ class OverlayService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val target = hudView
-        if (target != null) {
-            val config = HudConfig.load(this)
-            val snapshot = sensorReader.sample(config)
-            target.post { target.update(config, snapshot) }
-        }
+        // Force a prompt background poll after Apply/Start. Never read thermal files
+        // synchronously from the service's main thread.
+        pollingHandler?.removeCallbacks(ticker)
+        pollingHandler?.post(ticker)
         return START_NOT_STICKY
     }
 
@@ -180,11 +187,6 @@ class OverlayService : Service() {
         private var config = initialConfig
         private var snapshot = TemperatureSnapshot()
         private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-        private val outlinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.STROKE
-            strokeJoin = Paint.Join.ROUND
-            strokeCap = Paint.Cap.ROUND
-        }
         private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             typeface = Typeface.create("monospace", Typeface.BOLD)
         }
@@ -284,9 +286,6 @@ class OverlayService : Service() {
 
         private fun drawLegibleText(canvas: Canvas, text: String, x: Float, baseline: Float, color: Int) {
             configureTextPaint(10f)
-            outlinePaint.color = Color.argb(230, 0, 0, 0)
-            outlinePaint.strokeWidth = dp(1.2f).toFloat()
-            canvas.drawText(text, x, baseline, outlinePaint.apply { textSize = textPaint.textSize; typeface = textPaint.typeface })
             textPaint.color = color
             canvas.drawText(text, x, baseline, textPaint)
         }
