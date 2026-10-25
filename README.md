@@ -25,7 +25,7 @@ There is no GitHub token UI, update checker, APK installer code, network permiss
 - Kotlin 2.4.21 and the matching Compose compiler plugin
 - Gradle 9.7.0; JDK 25
 - Android SDK compile/target API 36; minimum API 30
-- Jetpack Compose BOM 2026.07.00, Material 3, Activity Compose 1.13.0
+- Jetpack Compose BOM 2026.06.00, Material 3, Activity Compose 1.13.0
 
 The newer Compose 1.12 line requires compileSdk API 37. The hosted runner previously could not install that platform, so this project uses the latest stable Compose line compatible with the API 36 build environment rather than choosing a dependency that cannot build there.
 
