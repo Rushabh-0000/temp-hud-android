@@ -64,7 +64,7 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
         with:
-          gradle-version: '9.8.1'
+          gradle-version: '9.7.0'
       - name: Calculate version and decode signing key
         id: version
         shell: bash
