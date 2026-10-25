@@ -26,7 +26,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.platform.LocalTextStyle
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -167,7 +167,7 @@ private fun TempHudScreen() {
     val panelWidthDp = 152f * config.scalePercent / 100f
     val maxX = (configuration.screenWidthDp - panelWidthDp - 2f).toInt().coerceAtLeast(0)
     val panelHeightDp = (8f + config.selectedCount() * 16.5f + 4f) * config.scalePercent / 100f
-    val maxY = (configuration.screenHeightDp - panelHeightDp - 2).coerceAtLeast(safeTopDp)
+    val maxY = (configuration.screenHeightDp.toFloat() - panelHeightDp - 2f).toInt().coerceAtLeast(safeTopDp)
     val minY = (safeTopDp + 2).coerceAtMost(maxY)
 
     Column(
