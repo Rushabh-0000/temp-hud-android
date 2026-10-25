@@ -39,13 +39,36 @@ jobs:
         with:
           gradle-version: '9.7.0'
 
-      - name: Build optimized release and installable debug APKs
-        run: gradle --no-daemon --stacktrace assembleRelease assembleDebug
+      - name: Create temporary CI-only signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          key_path="$RUNNER_TEMP/temp-hud-ci-test.p12"
+          password="$(openssl rand -hex 32)"
+          key_alias="temp-hud-ci-test"
+          keytool -genkeypair -noprompt \
+            -keystore "$key_path" \
+            -storetype PKCS12 \
+            -storepass "$password" \
+            -keypass "$password" \
+            -alias "$key_alias" \
+            -keyalg RSA -keysize 2048 -validity 30 \
+            -dname "CN=Temp HUD CI Test, O=Temp HUD, C=IN"
+          chmod 600 "$key_path"
+          {
+            echo "ANDROID_KEYSTORE_PATH=$key_path"
+            echo "ANDROID_KEYSTORE_PASSWORD=$password"
+            echo "ANDROID_KEY_ALIAS=$key_alias"
+            echo "ANDROID_KEY_PASSWORD=$password"
+          } >> "$GITHUB_ENV"
 
-      - name: Upload installable test APK
+      - name: Build minified, resource-shrunk test release APK
+        run: gradle --no-daemon --stacktrace assembleRelease
+
+      - name: Upload optimized installable test APK
         uses: actions/upload-artifact@v7
         with:
-          name: temp-hud-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: temp-hud-release-test-apk
+          path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 7
