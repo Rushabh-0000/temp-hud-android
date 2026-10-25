@@ -165,9 +165,9 @@ class OverlayService : Service() {
             if (config.isEnabled(key)) add(OverlayRow("CPU $core", snapshot.cpuCores.getOrNull(core)))
         }
         val builtInSourceIds = buildSet {
-            snapshot.cpuOverall?.sourceName?.split(" · ")?.lastOrNull()?.let { add(it) }
-            snapshot.gpuOverall?.sourceName?.split(" · ")?.lastOrNull()?.let { add(it) }
-            snapshot.cpuCores.filterNotNull().forEach { it.sourceName.split(" · ").lastOrNull()?.let { id -> add(id) } }
+            snapshot.cpuOverall?.sourceName?.split(", ")?.forEach { add(it.substringAfterLast(" · ")) }
+            snapshot.gpuOverall?.sourceName?.split(", ")?.forEach { add(it.substringAfterLast(" · ")) }
+            snapshot.cpuCores.filterNotNull().forEach { add(it.sourceName.substringAfterLast(" · ")) }
         }
         snapshot.allSensors.filter { config.selectedThermalSensors.contains(it.id) && it.id !in builtInSourceIds }
             .forEach { add(OverlayRow(it.label, it)) }

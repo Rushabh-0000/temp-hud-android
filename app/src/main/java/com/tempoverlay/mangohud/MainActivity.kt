@@ -187,7 +187,7 @@ private fun SettingsScreen() {
         Divider(color = Edge, thickness = 0.7.dp)
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Text("CPU cores", color = MainText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-            Text("${(0..7).count { config.isEnabled(coreKeys[it])}/8", color = Muted, fontSize = 11.sp)
+            Text("${(0..7).count { config.isEnabled(coreKeys[it]) }}/8", color = Muted, fontSize = 11.sp)
             TextButton(onClick = { showCores = !showCores }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)) {
                 Text(if (showCores) "Hide" else "Edit", color = Mint, fontSize = 11.sp)
             }
