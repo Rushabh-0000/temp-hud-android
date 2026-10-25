@@ -13,14 +13,15 @@ data class HudConfig(
     val showCore6Temp: Boolean = false,
     val showCore7Temp: Boolean = false,
     val showGpuTemp: Boolean = true,
+    val selectedGpuSensors: Set<String> = emptySet(),
     val refreshMs: Int = 1500,
-    val transparency: Int = 76,
+    val transparency: Int = 0,
     val scalePercent: Int = 90,
     val textColorIndex: Int = 0,
     val textBrightness: Int = 100,
     val lockPosition: Boolean = false,
-    val positionXDp: Int = 6,
-    val positionYDp: Int = 72
+    val positionXDp: Int = 8,
+    val positionYDp: Int = 100
 ) {
     fun save(context: Context) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
@@ -34,8 +35,9 @@ data class HudConfig(
             .putBoolean("cpu6_temp", showCore6Temp)
             .putBoolean("cpu7_temp", showCore7Temp)
             .putBoolean("gpu_temp", showGpuTemp)
+            .putStringSet("selected_gpu_sensors", HashSet(selectedGpuSensors))
             .putInt("refresh_ms", refreshMs.coerceIn(500, 3000))
-            .putInt("transparency", transparency.coerceIn(20, 100))
+            .putInt("transparency", transparency.coerceIn(0, 65))
             .putInt("scale_percent", scalePercent.coerceIn(70, 110))
             .putInt("text_color_index", textColorIndex.coerceIn(0, HudPalette.textOptions.lastIndex))
             .putInt("text_brightness", textBrightness.coerceIn(35, 100))
@@ -45,31 +47,36 @@ data class HudConfig(
             .apply()
     }
 
-    fun isEnabled(key: String): Boolean = when (key) {
-        "cpuTemp" -> showCpuTemp
-        "core0Temp" -> showCore0Temp
-        "core1Temp" -> showCore1Temp
-        "core2Temp" -> showCore2Temp
-        "core3Temp" -> showCore3Temp
-        "core4Temp" -> showCore4Temp
-        "core5Temp" -> showCore5Temp
-        "core6Temp" -> showCore6Temp
-        "core7Temp" -> showCore7Temp
-        "gpuTemp" -> showGpuTemp
+    fun isEnabled(key: String): Boolean = when {
+        key == "cpuTemp" -> showCpuTemp
+        key == "core0Temp" -> showCore0Temp
+        key == "core1Temp" -> showCore1Temp
+        key == "core2Temp" -> showCore2Temp
+        key == "core3Temp" -> showCore3Temp
+        key == "core4Temp" -> showCore4Temp
+        key == "core5Temp" -> showCore5Temp
+        key == "core6Temp" -> showCore6Temp
+        key == "core7Temp" -> showCore7Temp
+        key == "gpuTemp" -> showGpuTemp
+        key.startsWith(GPU_SENSOR_PREFIX) -> selectedGpuSensors.contains(key.removePrefix(GPU_SENSOR_PREFIX))
         else -> false
     }
 
-    fun withMetric(key: String, enabled: Boolean): HudConfig = when (key) {
-        "cpuTemp" -> copy(showCpuTemp = enabled)
-        "core0Temp" -> copy(showCore0Temp = enabled)
-        "core1Temp" -> copy(showCore1Temp = enabled)
-        "core2Temp" -> copy(showCore2Temp = enabled)
-        "core3Temp" -> copy(showCore3Temp = enabled)
-        "core4Temp" -> copy(showCore4Temp = enabled)
-        "core5Temp" -> copy(showCore5Temp = enabled)
-        "core6Temp" -> copy(showCore6Temp = enabled)
-        "core7Temp" -> copy(showCore7Temp = enabled)
-        "gpuTemp" -> copy(showGpuTemp = enabled)
+    fun withMetric(key: String, enabled: Boolean): HudConfig = when {
+        key == "cpuTemp" -> copy(showCpuTemp = enabled)
+        key == "core0Temp" -> copy(showCore0Temp = enabled)
+        key == "core1Temp" -> copy(showCore1Temp = enabled)
+        key == "core2Temp" -> copy(showCore2Temp = enabled)
+        key == "core3Temp" -> copy(showCore3Temp = enabled)
+        key == "core4Temp" -> copy(showCore4Temp = enabled)
+        key == "core5Temp" -> copy(showCore5Temp = enabled)
+        key == "core6Temp" -> copy(showCore6Temp = enabled)
+        key == "core7Temp" -> copy(showCore7Temp = enabled)
+        key == "gpuTemp" -> copy(showGpuTemp = enabled)
+        key.startsWith(GPU_SENSOR_PREFIX) -> {
+            val id = key.removePrefix(GPU_SENSOR_PREFIX)
+            copy(selectedGpuSensors = if (enabled) selectedGpuSensors + id else selectedGpuSensors - id)
+        }
         else -> this
     }
 
@@ -83,9 +90,10 @@ data class HudConfig(
         (if (showCpuTemp) 1 else 0) +
             listOf(showCore0Temp, showCore1Temp, showCore2Temp, showCore3Temp,
                 showCore4Temp, showCore5Temp, showCore6Temp, showCore7Temp).count { it } +
-            (if (showGpuTemp) 1 else 0)
+            (if (showGpuTemp) 1 else 0) + selectedGpuSensors.size
 
     companion object {
+        const val GPU_SENSOR_PREFIX = "gpuSensor:"
         private const val PREFS = "temp_hud_settings"
         private const val KEY_RUNNING = "overlay_running"
 
@@ -102,14 +110,15 @@ data class HudConfig(
                 showCore6Temp = p.getBoolean("cpu6_temp", false),
                 showCore7Temp = p.getBoolean("cpu7_temp", false),
                 showGpuTemp = p.getBoolean("gpu_temp", true),
+                selectedGpuSensors = p.getStringSet("selected_gpu_sensors", emptySet())?.toSet() ?: emptySet(),
                 refreshMs = p.getInt("refresh_ms", 1500).coerceIn(500, 3000),
-                transparency = p.getInt("transparency", 76).coerceIn(20, 100),
+                transparency = p.getInt("transparency", 0).coerceIn(0, 65),
                 scalePercent = p.getInt("scale_percent", 90).coerceIn(70, 110),
                 textColorIndex = p.getInt("text_color_index", 0).coerceIn(0, HudPalette.textOptions.lastIndex),
                 textBrightness = p.getInt("text_brightness", 100).coerceIn(35, 100),
                 lockPosition = p.getBoolean("lock_position", false),
-                positionXDp = p.getInt("position_x_dp", 6).coerceAtLeast(0),
-                positionYDp = p.getInt("position_y_dp", 72).coerceAtLeast(0)
+                positionXDp = p.getInt("position_x_dp", 8).coerceAtLeast(0),
+                positionYDp = p.getInt("position_y_dp", 100).coerceAtLeast(0)
             )
         }
 
@@ -118,8 +127,7 @@ data class HudConfig(
 
         fun setRunning(context: Context, running: Boolean) {
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-                .putBoolean(KEY_RUNNING, running)
-                .apply()
+                .putBoolean(KEY_RUNNING, running).apply()
         }
     }
 }
@@ -152,24 +160,24 @@ object HudPalette {
             val (t0, c0) = stops[i]
             val (t1, c1) = stops[i + 1]
             if (celsius in t0..t1) {
-                val ratio = ((celsius - t0) / (t1 - t0)).coerceIn(0f, 1f)
-                val a = android.graphics.Color.alpha(c0)
-                val r = (android.graphics.Color.red(c0) + (android.graphics.Color.red(c1) - android.graphics.Color.red(c0)) * ratio).toInt()
-                val g = (android.graphics.Color.green(c0) + (android.graphics.Color.green(c1) - android.graphics.Color.green(c0)) * ratio).toInt()
-                val b = (android.graphics.Color.blue(c0) + (android.graphics.Color.blue(c1) - android.graphics.Color.blue(c0)) * ratio).toInt()
-                return applyBrightness(android.graphics.Color.argb(a, r, g, b), brightness)
+                val f = ((celsius - t0) / (t1 - t0)).coerceIn(0f, 1f)
+                return applyBrightness(android.graphics.Color.rgb(
+                    (android.graphics.Color.red(c0) + (android.graphics.Color.red(c1) - android.graphics.Color.red(c0)) * f).toInt(),
+                    (android.graphics.Color.green(c0) + (android.graphics.Color.green(c1) - android.graphics.Color.green(c0)) * f).toInt(),
+                    (android.graphics.Color.blue(c0) + (android.graphics.Color.blue(c1) - android.graphics.Color.blue(c0)) * f).toInt()
+                ), brightness)
             }
         }
         return applyBrightness(stops.last().second, brightness)
     }
 
     private fun applyBrightness(color: Int, brightness: Int): Int {
-        val factor = brightness.coerceIn(35, 100) / 100f
+        val f = brightness.coerceIn(35, 100) / 100f
         return android.graphics.Color.argb(
             android.graphics.Color.alpha(color),
-            (android.graphics.Color.red(color) * factor).toInt().coerceIn(0, 255),
-            (android.graphics.Color.green(color) * factor).toInt().coerceIn(0, 255),
-            (android.graphics.Color.blue(color) * factor).toInt().coerceIn(0, 255)
+            (android.graphics.Color.red(color) * f).toInt().coerceIn(0, 255),
+            (android.graphics.Color.green(color) * f).toInt().coerceIn(0, 255),
+            (android.graphics.Color.blue(color) * f).toInt().coerceIn(0, 255)
         )
     }
 }
