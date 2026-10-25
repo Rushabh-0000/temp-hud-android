@@ -1,459 +1,257 @@
 package com.tempoverlay.mangohud
 
-import android.app.Activity
-import android.app.AlertDialog
 import android.content.Intent
-import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
-import android.text.InputType
-import android.widget.Button
-import android.widget.EditText
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
-import androidx.core.content.FileProvider
-import org.json.JSONArray
-import org.json.JSONObject
-import java.io.BufferedInputStream
-import java.io.BufferedReader
-import java.io.File
-import java.io.FileInputStream
-import java.io.FileOutputStream
-import java.io.FilterInputStream
-import java.io.InputStream
-import java.io.InputStreamReader
-import java.net.HttpURLConnection
-import java.net.URL
-import java.security.MessageDigest
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import java.util.Locale
-import java.util.concurrent.Executors
 
-class MainActivity : Activity() {
-    companion object {
-        private const val REPO = "Rushabh-0000/temp-hud-android"
-        private const val INSTALL_PERMISSION_REQUEST = 779
-    }
+private val Background = Color(0xFF090D12)
+private val SurfaceDark = Color(0xFF121922)
+private val SurfaceRaised = Color(0xFF19232E)
+private val Mint = Color(0xFF8CFFD0)
+private val Blue = Color(0xFF91B9FF)
+private val MainText = Color(0xFFEAF1F8)
+private val MutedText = Color(0xFF8F9DAD)
+private val Border = Color(0xFF283441)
 
-    private val io = Executors.newSingleThreadExecutor()
-    private var status: TextView? = null
-    private var pendingInstaller: File? = null
-
-    private fun dp(value: Float): Int =
-        (value * resources.displayMetrics.density + 0.5f).toInt()
-
+class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        cleanStaleUpdateFiles()
-        buildUi()
-    }
-
-    private fun buildUi() {
-        val scroll = ScrollView(this)
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(22f), dp(26f), dp(22f), dp(24f))
-            setBackgroundColor(Color.rgb(11, 16, 24))
+        window.statusBarColor = android.graphics.Color.rgb(9, 13, 18)
+        window.navigationBarColor = android.graphics.Color.rgb(9, 13, 18)
+        setContent {
+            MaterialTheme(
+                colorScheme = darkColorScheme(
+                    primary = Mint, secondary = Blue, background = Background,
+                    surface = SurfaceDark, onPrimary = Background,
+                    onBackground = MainText, onSurface = MainText
+                )
+            ) {
+                Surface(Modifier.fillMaxSize(), color = Background) { TempHudScreen() }
+            }
         }
-
-        root.addView(TextView(this).apply {
-            text = "Temp HUD"
-            textSize = 32f
-            setTextColor(Color.WHITE)
-            setTypeface(null, android.graphics.Typeface.BOLD)
-        })
-
-        root.addView(TextView(this).apply {
-            text = "Lightweight performance overlay for Android gaming."
-            textSize = 15f
-            setTextColor(Color.LTGRAY)
-            setPadding(0, dp(7f), 0, dp(18f))
-        })
-
-        root.addView(TextView(this).apply {
-            text = "Version ${BuildConfig.VERSION_NAME}  •  Code ${BuildConfig.VERSION_CODE}"
-            textSize = 13f
-            setTextColor(Color.rgb(72, 224, 178))
-            setPadding(0, 0, 0, dp(14f))
-        })
-
-        root.addView(TextView(this).apply {
-            text = "Per-core CPU load and clock speeds are shown where readable. Real thermal-zone sensors are listed separately; the phone may not expose individual core temperatures."
-            textSize = 14f
-            setTextColor(Color.rgb(190, 205, 220))
-            setPadding(0, 0, 0, dp(18f))
-        })
-
-        root.addView(button("Start floating overlay").apply {
-            setOnClickListener {
-                if (!Settings.canDrawOverlays(this@MainActivity)) {
-                    startActivity(
-                        Intent(
-                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                            Uri.parse("package:$packageName")
-                        )
-                    )
-                    return@setOnClickListener
-                }
-                val service = Intent(this@MainActivity, OverlayService::class.java)
-                if (Build.VERSION.SDK_INT >= 26) startForegroundService(service) else startService(service)
-                showStatus("Overlay started. Drag it to position it over your game.")
-            }
-        })
-
-        root.addView(button("Stop overlay").apply {
-            setOnClickListener {
-                stopService(Intent(this@MainActivity, OverlayService::class.java))
-                showStatus("Overlay stopped.")
-            }
-        })
-
-        root.addView(TextView(this).apply {
-            text = "Updates"
-            textSize = 20f
-            setTextColor(Color.WHITE)
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            setPadding(0, dp(22f), 0, dp(6f))
-        })
-
-        root.addView(TextView(this).apply {
-            text = "For a private GitHub repository, use a fine-grained token with access to this repository and Contents: Read-only. The token stays on this device and is encrypted with Android Keystore."
-            setTextColor(Color.rgb(160, 178, 196))
-            textSize = 13f
-            setPadding(0, 0, 0, dp(10f))
-        })
-
-        root.addView(button("Configure GitHub update access").apply {
-            setOnClickListener { showTokenDialog() }
-        })
-
-        root.addView(button("Check for updates").apply {
-            setOnClickListener { checkForUpdates() }
-        })
-
-        root.addView(button("Forget GitHub token").apply {
-            setOnClickListener {
-                SecureTokenStore.clear(this@MainActivity)
-                showStatus("Saved GitHub token removed from this device.")
-            }
-        })
-
-        status = TextView(this).apply {
-            text = "Ready. The overlay works without GitHub access."
-            setTextColor(Color.rgb(72, 224, 178))
-            textSize = 13f
-            setPadding(0, dp(14f), 0, dp(10f))
-        }
-        root.addView(status)
-
-        root.addView(TextView(this).apply {
-            text = "No analytics. Update APKs are SHA-256 checked and removed from temporary cache after a successful app update. Android still requires your confirmation to install."
-            setTextColor(Color.GRAY)
-            textSize = 12f
-            setPadding(0, dp(14f), 0, 0)
-        })
-
-        scroll.addView(root)
-        setContentView(scroll)
     }
+}
 
-    private fun button(label: String) = Button(this).apply { text = label }
+@Composable
+private fun TempHudScreen() {
+    val context = LocalContext.current
+    var config by remember { mutableStateOf(HudConfig.load(context)) }
+    var running by remember { mutableStateOf(HudConfig.isRunning(context)) }
+    var status by remember { mutableStateOf("Ready. No account or network access is needed.") }
 
-    private fun showTokenDialog() {
-        val input = EditText(this).apply {
-            setSingleLine(true)
-            hint = "github_pat_…"
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-        }
-        AlertDialog.Builder(this)
-            .setTitle("GitHub update access")
-            .setMessage(
-                "Create a fine-grained personal access token in GitHub Settings → Developer settings. " +
-                    "Limit it to $REPO and grant Contents: Read-only. Never share it in chat or commit it to the repository."
-            )
-            .setView(input)
-            .setNegativeButton("Cancel", null)
-            .setPositiveButton("Save and check") { _, _ ->
-                val value = input.text.toString().trim()
-                if (value.isEmpty()) {
-                    showStatus("No token entered.")
-                    return@setPositiveButton
-                }
-                try {
-                    SecureTokenStore.save(this, value)
-                    showStatus("Token encrypted on this device. Checking for a release…")
-                    checkForUpdates()
-                } catch (e: Exception) {
-                    showStatus("Could not securely store token: ${safeMessage(e)}")
-                }
-            }
-            .show()
+    fun save(next: HudConfig) {
+        config = next
+        next.save(context)
     }
-
-    private fun checkForUpdates() {
-        val token = try {
-            SecureTokenStore.read(this)
-        } catch (_: Exception) {
-            showStatus("Saved token could not be decrypted. Forget it and configure access again.")
+    fun startHud() {
+        if (!Settings.canDrawOverlays(context)) {
+            status = "Allow Display over other apps, return here, then tap START HUD."
+            context.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}")))
             return
         }
-        if (token.isNullOrEmpty()) {
-            showTokenDialog()
-            return
-        }
-
-        showStatus("Checking latest release…")
-        io.execute {
-            try {
-                val release = requestJson("https://api.github.com/repos/$REPO/releases/latest", token)
-                val assets = release.getJSONArray("assets")
-                val updateAsset = findAsset(assets, "update.json")
-                    ?: throw IllegalStateException("Latest release has no updater metadata asset.")
-                val apkAsset = findAsset(assets, "app-release.apk")
-                    ?: throw IllegalStateException("Latest release has no APK asset.")
-                val metadata = JSONObject(readAssetText(updateAsset.getString("url"), token))
-                val remoteCode = metadata.getInt("versionCode")
-                val remoteName = metadata.getString("versionName")
-
-                if (remoteCode <= BuildConfig.VERSION_CODE) {
-                    runOnUiThread { showStatus("You're up to date (${BuildConfig.VERSION_NAME}).") }
-                    return@execute
-                }
-
-                val digest = metadata.getString("apkSha256").lowercase(Locale.ROOT)
-                val assetUrl = apkAsset.optString("url")
-                runOnUiThread {
-                    AlertDialog.Builder(this@MainActivity)
-                        .setTitle("Temp HUD update available")
-                        .setMessage(
-                            "Installed: ${BuildConfig.VERSION_NAME}\nAvailable: $remoteName" +
-                                "\n\nDownload and verify the signed APK, then open Android's installer?"
-                        )
-                        .setNegativeButton("Later") { _, _ -> showStatus("Update postponed.") }
-                        .setPositiveButton("Download & install") { _, _ ->
-                            downloadAndInstall(assetUrl, token, digest, remoteName)
-                        }
-                        .show()
-                }
-            } catch (e: Exception) {
-                val message = safeMessage(e)
-                runOnUiThread {
-                    showStatus(
-                        "Update check failed: $message. Verify token access and confirm a release has been published."
-                    )
-                }
-            }
-        }
-    }
-
-    private fun downloadAndInstall(
-        assetApiUrl: String,
-        token: String,
-        expectedSha256: String,
-        version: String
-    ) {
-        showStatus("Downloading Temp HUD $version…")
-        io.execute {
-            val folder = File(cacheDir, "updates")
-            val partial = File(folder, "app-release.apk.part")
-            val apk = File(folder, "app-release.apk")
-            try {
-                if (!folder.exists() && !folder.mkdirs()) {
-                    throw IllegalStateException("Cannot create temporary update folder.")
-                }
-                if (partial.exists()) partial.delete()
-                openGitHubAsset(assetApiUrl, token).use { input ->
-                    FileOutputStream(partial).use { output ->
-                        val buffer = ByteArray(64 * 1024)
-                        while (true) {
-                            val count = input.read(buffer)
-                            if (count < 0) break
-                            output.write(buffer, 0, count)
-                        }
-                        output.fd.sync()
-                    }
-                }
-
-                val actualHash = sha256(partial)
-                if (!actualHash.equals(expectedSha256, ignoreCase = true)) {
-                    partial.delete()
-                    throw SecurityException("APK SHA-256 did not match release metadata.")
-                }
-
-                if (apk.exists()) apk.delete()
-                if (!partial.renameTo(apk)) throw IllegalStateException("Could not finalize downloaded APK.")
-                pendingInstaller = apk
-                runOnUiThread {
-                    showStatus("APK verified. Opening Android's installer…")
-                    openInstallerWhenAllowed()
-                }
-            } catch (e: Exception) {
-                partial.delete()
-                runOnUiThread { showStatus("Download failed: ${safeMessage(e)}") }
-            }
-        }
-    }
-
-    private fun openInstallerWhenAllowed() {
-        val apk = pendingInstaller
-        if (apk == null || !apk.isFile) {
-            showStatus("Update package is missing. Please check for updates again.")
-            return
-        }
-        if (Build.VERSION.SDK_INT >= 26 && !packageManager.canRequestPackageInstalls()) {
-            showStatus("Allow Temp HUD to install updates, then return here.")
-            startActivityForResult(
-                Intent(
-                    Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                    Uri.parse("package:$packageName")
-                ),
-                INSTALL_PERMISSION_REQUEST
-            )
-            return
-        }
-
         try {
-            val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", apk)
-            val install = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, "application/vnd.android.package-archive")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            startActivity(install)
-            showStatus("Confirm installation in Android. The temporary APK is removed after the package update completes.")
+            val intent = Intent(context, OverlayService::class.java).setAction(OverlayService.ACTION_START)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent)
+            else context.startService(intent)
+            running = true
+            status = "HUD starting. Drag its top strip to reposition it."
         } catch (e: Exception) {
-            showStatus("Could not open Android installer: ${safeMessage(e)}")
+            status = "Could not start HUD: ${e.javaClass.simpleName}"
         }
     }
-
-    @Deprecated("Uses the platform settings activity for allowing APK installs")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == INSTALL_PERMISSION_REQUEST) {
-            if (Build.VERSION.SDK_INT < 26 || packageManager.canRequestPackageInstalls()) {
-                openInstallerWhenAllowed()
-            } else {
-                showStatus("Install permission was not enabled. The APK remains temporarily cached for retry.")
-            }
-        }
+    fun stopHud() {
+        context.stopService(Intent(context, OverlayService::class.java))
+        running = false
+        status = "HUD stopped."
     }
 
-    private fun requestJson(url: String, token: String): JSONObject {
-        val connection = openApiConnection(url, token, "application/vnd.github+json")
-        try {
-            val code = connection.responseCode
-            if (code !in 200..299) throw IllegalStateException(httpMessage(code))
-            return JSONObject(connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() })
-        } finally {
-            connection.disconnect()
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            .background(Background).padding(horizontal = 20.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Box(
+                Modifier.size(54.dp).background(SurfaceRaised, RoundedCornerShape(16.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("TH", fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Black, color = Mint, fontSize = 20.sp)
+            }
+            Spacer(Modifier.width(13.dp))
+            Column(Modifier.weight(1f)) {
+                Text("TEMP HUD", color = MainText, fontWeight = FontWeight.Black, fontSize = 25.sp, letterSpacing = 1.6.sp)
+                Text("REAL-TIME GAMING OVERLAY", color = MutedText, fontSize = 10.sp, letterSpacing = 1.5.sp)
+            }
+            Surface(
+                color = if (running) Color(0xFF15362B) else SurfaceRaised,
+                shape = RoundedCornerShape(50),
+                border = BorderStroke(1.dp, if (running) Color(0xFF27694E) else Border)
+            ) {
+                Text(
+                    if (running) "LIVE" else "READY",
+                    Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
+                    color = if (running) Mint else MutedText,
+                    fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold
+                )
+            }
         }
-    }
 
-    private fun readAssetText(apiUrl: String, token: String): String =
-        openGitHubAsset(apiUrl, token).bufferedReader(Charsets.UTF_8).use { it.readText() }
+        Text(
+            "A compact MangoHud-inspired panel. Fixed-width, draggable, adjustable transparency, and designed to stay quiet in the background.",
+            color = MutedText, fontSize = 14.sp, lineHeight = 21.sp
+        )
 
-    /** Follows GitHub's signed asset redirect. Never forward the repository token to the asset CDN. */
-    private fun openGitHubAsset(apiUrl: String, token: String): InputStream {
-        var current = URL(apiUrl)
-        repeat(6) {
-            val connection = current.openConnection() as HttpURLConnection
-            connection.connectTimeout = 15_000
-            connection.readTimeout = 30_000
-            connection.instanceFollowRedirects = false
-            connection.requestMethod = "GET"
-            connection.setRequestProperty("Accept", "application/octet-stream")
-            connection.setRequestProperty("User-Agent", "TempHUD-Android/${BuildConfig.VERSION_NAME}")
-            if (current.host.equals("api.github.com", ignoreCase = true)) {
-                connection.setRequestProperty("Authorization", "Bearer $token")
-                connection.setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
+        SectionHeading("01", "HUD MODULES", "Select only the hardware blocks you want to poll.")
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+            MetricToggle(Modifier.weight(1f), "CPU", "Load · clock · temp", Mint, config.showCpu) { enabled ->
+                if (!enabled && !config.showGpu) status = "Keep at least one module enabled."
+                else save(config.copy(showCpu = enabled))
             }
-
-            val code = connection.responseCode
-            if (code == 301 || code == 302 || code == 303 || code == 307 || code == 308) {
-                val location = connection.getHeaderField("Location")
-                connection.disconnect()
-                if (location.isNullOrEmpty()) throw IllegalStateException("GitHub download redirect was missing.")
-                current = URL(current, location)
-                return@repeat
+            MetricToggle(Modifier.weight(1f), "GPU", "Load · clock · temp", Blue, config.showGpu) { enabled ->
+                if (!enabled && !config.showCpu) status = "Keep at least one module enabled."
+                else save(config.copy(showGpu = enabled))
             }
+        }
 
-            if (code !in 200..299) {
-                connection.disconnect()
-                throw IllegalStateException(httpMessage(code))
-            }
-
-            return object : FilterInputStream(connection.inputStream) {
-                override fun close() {
-                    try {
-                        super.close()
-                    } finally {
-                        connection.disconnect()
-                    }
+        SectionHeading("02", "REFRESH RATE", "Lower intervals update faster but use more resources.")
+        ControlCard {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.weight(1f)) {
+                    Text("Sensor polling", color = MainText, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                    Text("Background refresh interval", color = MutedText, fontSize = 12.sp)
                 }
+                Text(
+                    String.format(Locale.US, "%.2f s", config.refreshMs / 1000f),
+                    color = Mint, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 15.sp
+                )
+            }
+            Slider(
+                value = config.refreshMs.toFloat(),
+                onValueChange = { save(config.copy(refreshMs = it.toInt())) },
+                valueRange = 500f..3000f, steps = 9,
+                colors = SliderDefaults.colors(thumbColor = Mint, activeTrackColor = Mint, inactiveTrackColor = Border)
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("0.5 s · Faster", color = MutedText, fontSize = 11.sp)
+                Text("3.0 s · Lower use", color = MutedText, fontSize = 11.sp)
             }
         }
-        throw IllegalStateException("Too many redirects while downloading release asset.")
-    }
 
-    private fun openApiConnection(url: String, token: String, accept: String): HttpURLConnection =
-        (URL(url).openConnection() as HttpURLConnection).apply {
-            connectTimeout = 15_000
-            readTimeout = 20_000
-            requestMethod = "GET"
-            setRequestProperty("Accept", accept)
-            setRequestProperty("User-Agent", "TempHUD-Android/${BuildConfig.VERSION_NAME}")
-            setRequestProperty("Authorization", "Bearer $token")
-            setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
-        }
-
-    private fun findAsset(assets: JSONArray, name: String): JSONObject? {
-        for (i in 0 until assets.length()) {
-            val asset = assets.getJSONObject(i)
-            if (asset.optString("name") == name) return asset
-        }
-        return null
-    }
-
-    private fun sha256(file: File): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        BufferedInputStream(FileInputStream(file)).use { input ->
-            val buffer = ByteArray(64 * 1024)
-            while (true) {
-                val count = input.read(buffer)
-                if (count < 0) break
-                digest.update(buffer, 0, count)
+        SectionHeading("03", "HUD TRANSPARENCY", "Only the background fades; text stays readable.")
+        ControlCard {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text("Background opacity", color = MainText, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                Text("${config.transparency}%", color = Mint, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+            }
+            Slider(
+                value = config.transparency.toFloat(),
+                onValueChange = { save(config.copy(transparency = it.toInt())) },
+                valueRange = 30f..100f, steps = 13,
+                colors = SliderDefaults.colors(thumbColor = Mint, activeTrackColor = Mint, inactiveTrackColor = Border)
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("See-through", color = MutedText, fontSize = 11.sp)
+                Text("Solid", color = MutedText, fontSize = 11.sp)
             }
         }
-        return digest.digest().joinToString("") { "%02x".format(Locale.ROOT, it.toInt() and 0xff) }
-    }
 
-    private fun httpMessage(code: Int): String = when (code) {
-        401, 403, 404 -> "GitHub denied access (HTTP $code); check repository token permissions"
-        429 -> "GitHub rate limit reached"
-        else -> "GitHub request returned HTTP $code"
-    }
+        SectionHeading("04", "OVERLAY CONTROL", "Drag the top strip to move it. HUD size is locked.")
+        Button(
+            onClick = { startHud() }, modifier = Modifier.fillMaxWidth().height(54.dp),
+            shape = RoundedCornerShape(14.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Background)
+        ) {
+            Text(if (running) "APPLY / RESTART HUD" else "START FLOATING HUD", fontWeight = FontWeight.Black, letterSpacing = 1.sp)
+        }
+        Button(
+            onClick = { stopHud() }, modifier = Modifier.fillMaxWidth().height(50.dp),
+            shape = RoundedCornerShape(14.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = SurfaceRaised, contentColor = MainText)
+        ) {
+            Text("STOP HUD", fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+        }
 
-    private fun safeMessage(error: Exception): String {
-        val message = error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName
-        return message
-            .replace(Regex("(?i)gh[pousr]_[A-Za-z0-9_]+"), "[redacted]")
-            .replace("\n", " ")
-    }
+        Surface(
+            color = SurfaceDark, shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, Border), modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                Text("METRIC HONESTY", color = Mint, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.3.sp)
+                Text(
+                    "Only CPU- and GPU-labelled thermal sensors are used. Android may block temperature, frequency, or GPU-load files; unavailable data shows N/A instead of unrelated sensors or made-up values.",
+                    color = MutedText, fontSize = 12.sp, lineHeight = 18.sp
+                )
+            }
+        }
 
-    private fun showStatus(message: String) {
-        status?.text = message
+        Text(status, color = Mint, fontSize = 12.sp, lineHeight = 17.sp)
+        Text(
+            "Android 11+ · Compose UI · No analytics · No internet permission · No in-app updater",
+            color = MutedText, fontSize = 10.sp, lineHeight = 15.sp, modifier = Modifier.padding(bottom = 12.dp)
+        )
     }
+}
 
-    private fun cleanStaleUpdateFiles() {
-        val folder = File(cacheDir, "updates")
-        val files = folder.listFiles() ?: return
-        val cutoff = System.currentTimeMillis() - 24L * 60 * 60 * 1000
-        files.forEach { file -> if (file.lastModified() < cutoff) file.delete() }
+@Composable
+private fun SectionHeading(number: String, title: String, subtitle: String) {
+    Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(number, color = Mint, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(title, color = MainText, fontWeight = FontWeight.Black, fontSize = 12.sp, letterSpacing = 1.4.sp)
+            Text(subtitle, color = MutedText, fontSize = 12.sp, lineHeight = 17.sp)
+        }
     }
+}
 
-    override fun onDestroy() {
-        if (isFinishing) io.shutdown()
-        super.onDestroy()
+@Composable
+private fun MetricToggle(
+    modifier: Modifier, title: String, detail: String, accent: Color, checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Card(
+        modifier = modifier, shape = RoundedCornerShape(15.dp),
+        colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+        border = BorderStroke(1.dp, if (checked) accent.copy(alpha = 0.55f) else Border)
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(title, color = accent, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Black, fontSize = 18.sp, modifier = Modifier.weight(1f))
+                Switch(checked = checked, onCheckedChange = onCheckedChange)
+            }
+            Text(detail, color = MutedText, fontSize = 10.sp, lineHeight = 14.sp)
+        }
+    }
+}
+
+@Composable
+private fun ControlCard(content: @Composable () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = SurfaceDark), border = BorderStroke(1.dp, Border)
+    ) {
+        Column(Modifier.padding(horizontal = 15.dp, vertical = 13.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            content()
+        }
     }
 }

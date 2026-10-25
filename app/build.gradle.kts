@@ -1,6 +1,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
 }
 
 val releaseStorePath = System.getenv("ANDROID_KEYSTORE_PATH")
@@ -14,13 +15,14 @@ android {
 
     defaultConfig {
         applicationId = "com.tempoverlay.mangohud"
-        minSdk = 26
+        minSdk = 30
         targetSdk = 36
-        versionCode = (providers.gradleProperty("VERSION_CODE").orNull ?: "1").toInt()
-        versionName = providers.gradleProperty("VERSION_NAME").orNull ?: "0.1.0"
+        versionCode = (providers.gradleProperty("VERSION_CODE").orNull ?: "2").toInt()
+        versionName = providers.gradleProperty("VERSION_NAME").orNull ?: "0.2.0"
     }
 
     buildFeatures {
+        compose = true
         buildConfig = true
     }
 
@@ -66,6 +68,10 @@ kotlin {
 }
 
 dependencies {
-    // Latest stable Core available for the API 36 build environment used by CI.
-    implementation("androidx.core:core:1.18.0")
+    // Stable Compose line compatible with the hosted API 36 build SDK.
+    implementation(platform("androidx.compose:compose-bom:2026.07.00"))
+    implementation("androidx.activity:activity-compose:1.13.0")
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.material3:material3")
 }
