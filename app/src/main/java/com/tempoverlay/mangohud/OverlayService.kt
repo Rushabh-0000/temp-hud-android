@@ -27,6 +27,7 @@ class OverlayService : Service() {
     companion object {
         private const val CHANNEL = "temp_hud_monitor"
         private const val NOTIFICATION_ID = 101
+        private const val POLL_INTERVAL_MS = 1500L
     }
 
     private var windowManager: WindowManager? = null
@@ -283,7 +284,4 @@ class OverlayService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private companion object {
-        const val POLL_INTERVAL_MS = 1500L
-    }
 }
