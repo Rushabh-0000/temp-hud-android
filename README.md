@@ -1,6 +1,6 @@
 # Temp HUD for Android
 
-A low-overhead MangoHud-inspired floating CPU/thermal HUD, initially targeted at the Realme 9 5G Speed Edition (Snapdragon 778G, Android 13).
+A low-overhead MangoHud-inspired floating CPU/thermal HUD written in Kotlin, initially targeted at the Realme 9 5G Speed Edition (Snapdragon 778G, Android 13).
 
 ## Current design
 - Native Android UI and services written in Kotlin.
