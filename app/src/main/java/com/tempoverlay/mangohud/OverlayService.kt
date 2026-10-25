@@ -372,6 +372,15 @@ class OverlayService : Service() {
         }
 
         private fun coreIndex(type: String): Int? {
+            // Qualcomm CPU thermal zones often use cpu-<cluster>-<core>-usr/step.
+            // On the target 8-core topology, cluster 0 maps to logical CPU 0-3
+            // and cluster 1 maps to logical CPU 4-7.
+            val qcom = Regex("^cpu-([0-1])-([0-3])-(?:usr|step)(?:[-_].*)?$").find(type)
+            if (qcom != null) {
+                val cluster = qcom.groupValues[1].toIntOrNull() ?: return null
+                val localCore = qcom.groupValues[2].toIntOrNull() ?: return null
+                return (cluster * 4 + localCore).takeIf { it in 0..7 }
+            }
             val patterns = listOf(
                 Regex("^cpu([0-7])(?:$|[-_].*)"),
                 Regex("^cpu[-_]core[-_]?([0-7])(?:$|[-_].*)"),

@@ -73,6 +73,8 @@ class MainActivity : ComponentActivity() {
                     onBackground = TextMain,
                     onSurface = TextMain
                 )
+                ),
+                typography = Typography(defaultFontFamily = FontFamily.SansSerif)
             ) {
                 Surface(Modifier.fillMaxSize(), color = Bg) {
                     TempHudScreen()
