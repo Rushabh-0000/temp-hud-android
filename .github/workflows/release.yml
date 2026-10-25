@@ -70,15 +70,19 @@ jobs:
         shell: bash
         run: |
           latest="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1 --json tagName --jq '.[0].tagName // empty' || true)"
-          base="${latest#v}"
-          if [[ ! "$base" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]; then base="0.1.0"; fi
-          IFS='.' read -r major minor patch <<< "$base"
-          case "${{ inputs.bump }}" in
-            major) major=$((major + 1)); minor=0; patch=0 ;;
-            minor) minor=$((minor + 1)); patch=0 ;;
-            *) patch=$((patch + 1)) ;;
-          esac
-          version="${major}.${minor}.${patch}"
+          if [[ -z "$latest" ]]; then
+            version="0.1.0"
+          else
+            base="${latest#v}"
+            if [[ ! "$base" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]; then base="0.1.0"; fi
+            IFS='.' read -r major minor patch <<< "$base"
+            case "${{ inputs.bump }}" in
+              major) major=$((major + 1)); minor=0; patch=0 ;;
+              minor) minor=$((minor + 1)); patch=0 ;;
+              *) patch=$((patch + 1)) ;;
+            esac
+            version="${major}.${minor}.${patch}"
+          fi
           code=$((1000 + GITHUB_RUN_NUMBER))
           key_path="$RUNNER_TEMP/temp-hud-release.p12"
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$key_path"
