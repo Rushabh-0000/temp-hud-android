@@ -1,38 +1,35 @@
 # Temp HUD for Android
 
-A compact MangoHud-inspired overlay written in Kotlin with a Jetpack Compose control screen. Designed first for the Realme 9 5G Speed Edition (Snapdragon 778G, Android 13).
+Compact MangoHud-inspired Android performance overlay, written in Kotlin with a Jetpack Compose settings screen. Target device: Realme 9 5G Speed Edition (Snapdragon 778G, Android 13). Minimum OS: Android 11 (API 30).
 
-## Features
+## HUD controls
 
-- Minimum OS: Android 11 (API 30); target API 36.
-- Compose control screen with separate CPU and GPU module switches.
-- Fixed-width HUD that can be moved by dragging the top strip; the panel cannot be resized by dragging.
-- Adjustable panel transparency and sensor refresh interval.
-- Overall CPU usage from aggregate `/proc/stat` counters when readable.
-- CPU clock from readable CPU cpufreq files.
-- GPU load and clock from Qualcomm KGSL/devfreq interfaces when the OS exposes them.
-- Temperature readings are restricted to thermal-zone type names containing `cpu` or `gpu`. Modem, display, battery, and unknown zones are never labelled as CPU/GPU temperatures.
-- When Android/OEM permissions block a metric or no matching sensor exists, it shows `N/A`, not a guessed value.
-- Polling uses a low-priority background thread. Disabled modules are not polled.
+- Individually select CPU load, CPU clock, overall CPU temperature, CPU 0 through CPU 7 temperature, GPU load, GPU clock, and overall GPU temperature.
+- Each selected item appears as its own one-line metric in a compact fixed-width floating panel.
+- Drag only the header to move the panel. Change the fixed panel scale from 70% to 110% in settings.
+- Set background transparency and refresh interval (0.5-3.0 seconds).
+- The overlay is drawn with a lightweight Canvas View. Procfs/sysfs reads run on a low-priority background thread, and disabled metrics are not polled.
+- CPU load uses aggregate `/proc/stat` counters when readable. CPU clock uses readable per-core cpufreq files.
+- GPU load/clock use Qualcomm KGSL/devfreq interfaces if readable.
 
-## No in-app updater
+## Temperature reporting
 
-There is no GitHub token UI, update checker, APK installer code, network permission, or analytics. Future releases are installed manually through Android's package installer.
+- Overall CPU temperature is the maximum readable thermal-zone temperature whose type is explicitly CPU/CPUSS-labelled.
+- Overall GPU temperature uses GPU/GPUSS-labelled zones only.
+- CPU 0-7 temperatures require a thermal zone whose name explicitly identifies that core (such as `cpu0` or `cpu-core0`). Generic labels like `cpu-1-3-step` are not assumed to mean a core number.
+- If the vendor kernel does not expose per-core temperature sensors, each selected core row remains `N/A`. The app does not duplicate overall CPU temperature across all eight cores or relabel modem/display/battery/skin sensors as CPU/GPU.
 
-## Build toolchain
+Android's public HardwarePropertiesManager API may throw SecurityException for ordinary apps; the app therefore uses readable thermal-zone interfaces and reports unavailable values as N/A rather than relying on privileged APIs.
 
-- Android Gradle Plugin 9.3.1
-- Kotlin 2.4.21 and the matching Compose compiler plugin
-- Gradle 9.7.0; JDK 25
-- Android SDK compile/target API 36; minimum API 30
-- Jetpack Compose BOM 2026.06.00, Material 3, Activity Compose 1.13.0
+## Privacy and updates
 
-The newer Compose 1.12 line requires compileSdk API 37. The hosted runner previously could not install that platform, so this project uses the latest stable Compose line compatible with the API 36 build environment rather than choosing a dependency that cannot build there.
+No internet permission, analytics, GitHub token screen, in-app updater, APK download/install code, or update receiver. New releases are installed manually by the user.
 
-## Cloud build
+## Build
 
-The **Verify Android Release Build** workflow compiles the optimized release variant and an installable debug APK. The debug artifact is uploaded as `temp-hud-debug-apk` for seven days. It uses a separate debug application ID and is for testing, not the final release.
+- AGP 9.3.1, Kotlin 2.4.21 (with matching Compose compiler plugin), Gradle 9.7.0, JDK 25.
+- compileSdk/targetSdk 36, minSdk 30.
+- Jetpack Compose BOM 2026.06.00, Material 3, Activity Compose 1.13.0.
+- Release is minified and resource-shrunk. CI creates a temporary short-lived test signing key on the runner and uploads an optimized test APK artifact; no signing material is committed.
 
-For a signed release, configure the persistent release signing key and the four repository Actions secrets. Run **Release Temp HUD** to publish the signed, minified APK. Because the app has no updater, the release contains only the APK.
-
-Keep the signing-key bootstrap artifact private: anyone who obtains the signing key can sign an app as Temp HUD. The key-setup workflow therefore requires the repository to be private before generating that key. This does not block ordinary CI builds or debug APKs.
+The permanent release signing key remains a one-time operation that should only be generated after the repository is private. Install the CI test APK manually. Because each CI test uses a disposable key, uninstall a previous test build before installing the next one.

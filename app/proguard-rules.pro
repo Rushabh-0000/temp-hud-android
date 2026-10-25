@@ -1,1 +1,3 @@
+-keep public class com.tempoverlay.mangohud.MainActivity { public <init>(); }
+-keep public class com.tempoverlay.mangohud.OverlayService { public <init>(); }
 -keepattributes *Annotation*

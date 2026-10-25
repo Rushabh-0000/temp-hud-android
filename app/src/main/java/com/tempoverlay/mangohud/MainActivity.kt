@@ -25,29 +25,58 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.util.Locale
 
-private val Background = Color(0xFF090D12)
-private val SurfaceDark = Color(0xFF121922)
-private val SurfaceRaised = Color(0xFF19232E)
+private val Bg = Color(0xFF080C11)
+private val Panel = Color(0xFF111922)
+private val PanelRaised = Color(0xFF18232E)
 private val Mint = Color(0xFF8CFFD0)
-private val Blue = Color(0xFF91B9FF)
-private val MainText = Color(0xFFEAF1F8)
-private val MutedText = Color(0xFF8F9DAD)
-private val Border = Color(0xFF283441)
+private val Blue = Color(0xFF8FB5FF)
+private val TextMain = Color(0xFFE7EEF7)
+private val TextMuted = Color(0xFF8D9BAA)
+private val Outline = Color(0xFF2A3745)
+
+private data class MetricOption(
+    val key: String,
+    val label: String,
+    val hint: String,
+    val accent: Color
+)
+
+private val cpuMetrics = listOf(
+    MetricOption("cpuLoad", "CPU LOAD", "Overall usage", Mint),
+    MetricOption("cpuClock", "CPU CLOCK", "Highest readable clock", Mint),
+    MetricOption("cpuTemp", "CPU TEMP", "Overall CPU sensor", Mint)
+)
+
+private val coreMetrics = (0..7).map { index ->
+    MetricOption("core${index}Temp", "CPU ${index} TEMP", "Core sensor only", Mint)
+}
+
+private val gpuMetrics = listOf(
+    MetricOption("gpuLoad", "GPU LOAD", "Adreno usage", Blue),
+    MetricOption("gpuClock", "GPU CLOCK", "Adreno frequency", Blue),
+    MetricOption("gpuTemp", "GPU TEMP", "GPU-labelled sensor", Blue)
+)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.statusBarColor = android.graphics.Color.rgb(9, 13, 18)
-        window.navigationBarColor = android.graphics.Color.rgb(9, 13, 18)
+        window.statusBarColor = android.graphics.Color.rgb(8, 12, 17)
+        window.navigationBarColor = android.graphics.Color.rgb(8, 12, 17)
         setContent {
             MaterialTheme(
                 colorScheme = darkColorScheme(
-                    primary = Mint, secondary = Blue, background = Background,
-                    surface = SurfaceDark, onPrimary = Background,
-                    onBackground = MainText, onSurface = MainText
+                    primary = Mint,
+                    secondary = Blue,
+                    background = Bg,
+                    surface = Panel,
+                    onPrimary = Bg,
+                    onBackground = TextMain,
+                    onSurface = TextMain
                 )
             ) {
-                Surface(Modifier.fillMaxSize(), color = Background) { TempHudScreen() }
+                Surface(Modifier.fillMaxSize(), color = Bg) {
+                    TempHudScreen()
+                }
             }
         }
     }
@@ -58,16 +87,23 @@ private fun TempHudScreen() {
     val context = LocalContext.current
     var config by remember { mutableStateOf(HudConfig.load(context)) }
     var running by remember { mutableStateOf(HudConfig.isRunning(context)) }
-    var status by remember { mutableStateOf("Ready. No account or network access is needed.") }
+    var showCoreSettings by remember { mutableStateOf(config.coreTempEnabled()) }
+    var status by remember { mutableStateOf("Ready · Settings are saved on this device.") }
 
     fun save(next: HudConfig) {
         config = next
         next.save(context)
     }
+
     fun startHud() {
         if (!Settings.canDrawOverlays(context)) {
             status = "Allow Display over other apps, return here, then tap START HUD."
-            context.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}")))
+            context.startActivity(
+                Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:${context.packageName}")
+                )
+            )
             return
         }
         try {
@@ -75,11 +111,12 @@ private fun TempHudScreen() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent)
             else context.startService(intent)
             running = true
-            status = "HUD starting. Drag its top strip to reposition it."
+            status = "HUD applied. Drag the small top strip to move it."
         } catch (e: Exception) {
             status = "Could not start HUD: ${e.javaClass.simpleName}"
         }
     }
+
     fun stopHud() {
         context.stopService(Intent(context, OverlayService::class.java))
         running = false
@@ -87,171 +124,250 @@ private fun TempHudScreen() {
     }
 
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-            .background(Background).padding(horizontal = 20.dp, vertical = 18.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp)
+        Modifier.fillMaxSize()
+            .background(Bg)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(13.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Box(
-                Modifier.size(54.dp).background(SurfaceRaised, RoundedCornerShape(16.dp)),
+                Modifier.size(44.dp).background(PanelRaised, RoundedCornerShape(12.dp)),
                 contentAlignment = Alignment.Center
             ) {
-                Text("TH", fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Black, color = Mint, fontSize = 20.sp)
+                Text("TH", color = Mint, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Black, fontSize = 16.sp)
             }
-            Spacer(Modifier.width(13.dp))
-            Column(Modifier.weight(1f)) {
-                Text("TEMP HUD", color = MainText, fontWeight = FontWeight.Black, fontSize = 25.sp, letterSpacing = 1.6.sp)
-                Text("REAL-TIME GAMING OVERLAY", color = MutedText, fontSize = 10.sp, letterSpacing = 1.5.sp)
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("TEMP HUD", color = TextMain, fontWeight = FontWeight.Black, fontSize = 21.sp, letterSpacing = 1.3.sp)
+                Text("CPU + ADRENO TELEMETRY", color = TextMuted, fontSize = 9.sp, letterSpacing = 1.2.sp)
             }
             Surface(
-                color = if (running) Color(0xFF15362B) else SurfaceRaised,
+                color = if (running) Color(0xFF15392D) else PanelRaised,
                 shape = RoundedCornerShape(50),
-                border = BorderStroke(1.dp, if (running) Color(0xFF27694E) else Border)
+                border = BorderStroke(1.dp, if (running) Color(0xFF2C7155) else Outline)
             ) {
                 Text(
                     if (running) "LIVE" else "READY",
-                    Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
-                    color = if (running) Mint else MutedText,
-                    fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold
+                    Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    color = if (running) Mint else TextMuted,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold
                 )
             }
-        }
-
-        Text(
-            "A compact MangoHud-inspired panel. Fixed-width, draggable, adjustable transparency, and designed to stay quiet in the background.",
-            color = MutedText, fontSize = 14.sp, lineHeight = 21.sp
-        )
-
-        SectionHeading("01", "HUD MODULES", "Select only the hardware blocks you want to poll.")
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            MetricToggle(Modifier.weight(1f), "CPU", "Load · clock · temp", Mint, config.showCpu) { enabled ->
-                if (!enabled && !config.showGpu) status = "Keep at least one module enabled."
-                else save(config.copy(showCpu = enabled))
-            }
-            MetricToggle(Modifier.weight(1f), "GPU", "Load · clock · temp", Blue, config.showGpu) { enabled ->
-                if (!enabled && !config.showCpu) status = "Keep at least one module enabled."
-                else save(config.copy(showGpu = enabled))
-            }
-        }
-
-        SectionHeading("02", "REFRESH RATE", "Lower intervals update faster but use more resources.")
-        ControlCard {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.weight(1f)) {
-                    Text("Sensor polling", color = MainText, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                    Text("Background refresh interval", color = MutedText, fontSize = 12.sp)
-                }
-                Text(
-                    String.format(Locale.US, "%.2f s", config.refreshMs / 1000f),
-                    color = Mint, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 15.sp
-                )
-            }
-            Slider(
-                value = config.refreshMs.toFloat(),
-                onValueChange = { save(config.copy(refreshMs = it.toInt())) },
-                valueRange = 500f..3000f, steps = 9,
-                colors = SliderDefaults.colors(thumbColor = Mint, activeTrackColor = Mint, inactiveTrackColor = Border)
-            )
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("0.5 s · Faster", color = MutedText, fontSize = 11.sp)
-                Text("3.0 s · Lower use", color = MutedText, fontSize = 11.sp)
-            }
-        }
-
-        SectionHeading("03", "HUD TRANSPARENCY", "Only the background fades; text stays readable.")
-        ControlCard {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                Text("Background opacity", color = MainText, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, modifier = Modifier.weight(1f))
-                Text("${config.transparency}%", color = Mint, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-            }
-            Slider(
-                value = config.transparency.toFloat(),
-                onValueChange = { save(config.copy(transparency = it.toInt())) },
-                valueRange = 30f..100f, steps = 13,
-                colors = SliderDefaults.colors(thumbColor = Mint, activeTrackColor = Mint, inactiveTrackColor = Border)
-            )
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("See-through", color = MutedText, fontSize = 11.sp)
-                Text("Solid", color = MutedText, fontSize = 11.sp)
-            }
-        }
-
-        SectionHeading("04", "OVERLAY CONTROL", "Drag the top strip to move it. HUD size is locked.")
-        Button(
-            onClick = { startHud() }, modifier = Modifier.fillMaxWidth().height(54.dp),
-            shape = RoundedCornerShape(14.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Background)
-        ) {
-            Text(if (running) "APPLY / RESTART HUD" else "START FLOATING HUD", fontWeight = FontWeight.Black, letterSpacing = 1.sp)
-        }
-        Button(
-            onClick = { stopHud() }, modifier = Modifier.fillMaxWidth().height(50.dp),
-            shape = RoundedCornerShape(14.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = SurfaceRaised, contentColor = MainText)
-        ) {
-            Text("STOP HUD", fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
         }
 
         Surface(
-            color = SurfaceDark, shape = RoundedCornerShape(16.dp),
-            border = BorderStroke(1.dp, Border), modifier = Modifier.fillMaxWidth()
+            color = Panel, shape = RoundedCornerShape(13.dp),
+            border = BorderStroke(1.dp, Outline), modifier = Modifier.fillMaxWidth()
         ) {
-            Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                Text("METRIC HONESTY", color = Mint, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.3.sp)
+            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text("HUD PROFILE  /  REALME 9 SPEED EDITION", color = Mint, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                 Text(
-                    "Only CPU- and GPU-labelled thermal sensors are used. Android may block temperature, frequency, or GPU-load files; unavailable data shows N/A instead of unrelated sensors or made-up values.",
-                    color = MutedText, fontSize = 12.sp, lineHeight = 18.sp
+                    "Choose each value independently. Only selected items are drawn and polled. The floating panel stays compact and fixed-width; use its header to drag it.",
+                    color = TextMuted, fontSize = 12.sp, lineHeight = 17.sp
                 )
             }
         }
 
-        Text(status, color = Mint, fontSize = 12.sp, lineHeight = 17.sp)
+        SectionTitle("01", "CPU", "Overall readings")
+        MetricGrid(cpuMetrics, config) { key, checked -> save(config.withMetric(key, checked)) }
+
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("CPU CORE TEMPERATURES", color = TextMain, fontWeight = FontWeight.Bold, fontSize = 11.sp, letterSpacing = 0.8.sp)
+                Text("CPU 0 through CPU 7 · individual switches", color = TextMuted, fontSize = 11.sp)
+            }
+            Text(
+                "${listOf(config.showCore0Temp, config.showCore1Temp, config.showCore2Temp, config.showCore3Temp, config.showCore4Temp, config.showCore5Temp, config.showCore6Temp, config.showCore7Temp).count { it }}/8",
+                color = Mint, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 11.sp
+            )
+            Spacer(Modifier.width(6.dp))
+            TextButton(onClick = { showCoreSettings = !showCoreSettings }) {
+                Text(if (showCoreSettings) "HIDE" else "EDIT", color = Mint, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+
+        if (showCoreSettings) {
+            MetricGrid(coreMetrics, config) { key, checked -> save(config.withMetric(key, checked)) }
+        }
+
+        SectionTitle("02", "GPU", "Adreno readings")
+        MetricGrid(gpuMetrics, config) { key, checked -> save(config.withMetric(key, checked)) }
+
+        SectionTitle("03", "HUD SIZE + TIMING", "Compact by default. Adjust without resizing by dragging.")
+        SettingsCard {
+            SliderSetting(
+                title = "HUD scale",
+                valueText = "${config.scalePercent}%",
+                value = config.scalePercent.toFloat(),
+                range = 70f..110f,
+                steps = 7,
+                left = "Smaller",
+                right = "Larger",
+                onChange = { save(config.copy(scalePercent = it.toInt())) }
+            )
+            Divider(color = Outline.copy(alpha = 0.7f))
+            SliderSetting(
+                title = "Refresh interval",
+                valueText = String.format(Locale.US, "%.2f s", config.refreshMs / 1000f),
+                value = config.refreshMs.toFloat(),
+                range = 500f..3000f,
+                steps = 9,
+                left = "0.5 s",
+                right = "3.0 s",
+                onChange = { save(config.copy(refreshMs = it.toInt())) }
+            )
+            Divider(color = Outline.copy(alpha = 0.7f))
+            SliderSetting(
+                title = "Background opacity",
+                valueText = "${config.transparency}%",
+                value = config.transparency.toFloat(),
+                range = 25f..100f,
+                steps = 14,
+                left = "Transparent",
+                right = "Solid",
+                onChange = { save(config.copy(transparency = it.toInt())) }
+            )
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            Button(
+                onClick = { startHud() },
+                modifier = Modifier.weight(1f).height(48.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)
+            ) {
+                Text(if (running) "APPLY HUD" else "START HUD", fontWeight = FontWeight.Black, fontSize = 12.sp, letterSpacing = 0.4.sp)
+            }
+            OutlinedButton(
+                onClick = { stopHud() },
+                modifier = Modifier.weight(1f).height(48.dp),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, Outline),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = TextMain)
+            ) {
+                Text("STOP HUD", fontWeight = FontWeight.Bold, fontSize = 12.sp, letterSpacing = 0.4.sp)
+            }
+        }
+
+        Text(status, color = Mint, fontSize = 11.sp, lineHeight = 16.sp)
         Text(
-            "Android 11+ · Compose UI · No analytics · No internet permission · No in-app updater",
-            color = MutedText, fontSize = 10.sp, lineHeight = 15.sp, modifier = Modifier.padding(bottom = 12.dp)
+            "Android 11+ · no network permission · no updater · no analytics",
+            color = TextMuted, fontSize = 10.sp, modifier = Modifier.padding(bottom = 8.dp)
         )
     }
 }
 
 @Composable
-private fun SectionHeading(number: String, title: String, subtitle: String) {
-    Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(number, color = Mint, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(title, color = MainText, fontWeight = FontWeight.Black, fontSize = 12.sp, letterSpacing = 1.4.sp)
-            Text(subtitle, color = MutedText, fontSize = 12.sp, lineHeight = 17.sp)
+private fun SectionTitle(number: String, title: String, subtitle: String) {
+    Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+        Text(number, color = Mint, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(title, color = TextMain, fontWeight = FontWeight.Black, fontSize = 12.sp, letterSpacing = 1.1.sp)
+            Text(subtitle, color = TextMuted, fontSize = 11.sp)
         }
     }
 }
 
 @Composable
-private fun MetricToggle(
-    modifier: Modifier, title: String, detail: String, accent: Color, checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
+private fun MetricGrid(
+    items: List<MetricOption>,
+    config: HudConfig,
+    onChange: (String, Boolean) -> Unit
 ) {
-    Card(
-        modifier = modifier, shape = RoundedCornerShape(15.dp),
-        colors = CardDefaults.cardColors(containerColor = SurfaceDark),
-        border = BorderStroke(1.dp, if (checked) accent.copy(alpha = 0.55f) else Border)
-    ) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(title, color = accent, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Black, fontSize = 18.sp, modifier = Modifier.weight(1f))
-                Switch(checked = checked, onCheckedChange = onCheckedChange)
+    items.chunked(2).forEach { rowItems ->
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            rowItems.forEach { item ->
+                Box(Modifier.weight(1f)) {
+                    MetricTile(item, config.isEnabled(item.key)) { checked -> onChange(item.key, checked) }
+                }
             }
-            Text(detail, color = MutedText, fontSize = 10.sp, lineHeight = 14.sp)
+            if (rowItems.size == 1) Spacer(Modifier.weight(1f))
         }
     }
 }
 
 @Composable
-private fun ControlCard(content: @Composable () -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = SurfaceDark), border = BorderStroke(1.dp, Border)
+private fun MetricTile(item: MetricOption, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Surface(
+        color = if (checked) item.accent.copy(alpha = 0.09f) else Panel,
+        shape = RoundedCornerShape(11.dp),
+        border = BorderStroke(1.dp, if (checked) item.accent.copy(alpha = 0.55f) else Outline),
+        modifier = Modifier.fillMaxWidth()
     ) {
-        Column(Modifier.padding(horizontal = 15.dp, vertical = 13.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            content()
+        Row(
+            Modifier.padding(horizontal = 9.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(item.label, color = if (checked) item.accent else TextMain, fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                Text(item.hint, color = TextMuted, fontSize = 9.sp, lineHeight = 12.sp)
+            }
+            Checkbox(
+                checked = checked,
+                onCheckedChange = onCheckedChange,
+                modifier = Modifier.size(30.dp),
+                colors = CheckboxDefaults.colors(
+                    checkedColor = item.accent,
+                    uncheckedColor = TextMuted,
+                    checkmarkColor = Bg
+                )
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
+    Surface(
+        color = Panel,
+        shape = RoundedCornerShape(13.dp),
+        border = BorderStroke(1.dp, Outline),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            content = content
+        )
+    }
+}
+
+@Composable
+private fun SliderSetting(
+    title: String,
+    valueText: String,
+    value: Float,
+    range: ClosedFloatingPointRange<Float>,
+    steps: Int,
+    left: String,
+    right: String,
+    onChange: (Float) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Text(title, color = TextMain, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            Text(valueText, color = Mint, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        }
+        Slider(
+            value = value,
+            onValueChange = onChange,
+            valueRange = range,
+            steps = steps,
+            colors = SliderDefaults.colors(
+                thumbColor = Mint,
+                activeTrackColor = Mint,
+                inactiveTrackColor = Outline
+            )
+        )
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(left, color = TextMuted, fontSize = 9.sp)
+            Text(right, color = TextMuted, fontSize = 9.sp)
         }
     }
 }
