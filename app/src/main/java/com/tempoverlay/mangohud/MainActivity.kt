@@ -100,7 +100,6 @@ private fun SettingsScreen() {
     var search by remember { mutableStateOf("") }
     var showAllSensors by remember { mutableStateOf(false) }
     var showCores by remember { mutableStateOf(false) }
-    var showGpuSensors by remember { mutableStateOf(false) }
     var showControls by remember { mutableStateOf(false) }
     var showCustomEditor by remember { mutableStateOf(false) }
     var customLabel by remember { mutableStateOf("") }
@@ -148,10 +147,6 @@ private fun SettingsScreen() {
     val sortedSensors = snapshot.allSensors.sortedWith(
         compareBy<ThermalReading> { it.label }.thenBy { it.id }
     )
-    val gpuSensors = sortedSensors.filter {
-        val haystack = "${it.label} ${it.id} ${it.sourceName}".lowercase(Locale.US)
-        haystack.contains("gpu") || haystack.contains("gpuss")
-    }
     val filteredSensors = sortedSensors.filter {
         val haystack = "${it.label} ${it.id} ${it.sourceName}".lowercase(Locale.US)
         haystack.contains(search.trim().lowercase(Locale.US))
@@ -193,15 +188,7 @@ private fun SettingsScreen() {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Text("CPU cores", color = MainText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
             Text("${(0..7).count { config.isEnabled(coreKeys[it]) }}/8", color = Muted, fontSize = 11.sp)
-            TextButton(onClick = {
-                val allOn = (0..7).all { config.isEnabled(coreKeys[it]) }
-                var next = config
-                for (i in 0..7) next = next.withMetric(coreKeys[i], !allOn)
-                save(next)
-            }, contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) {
-                Text(if ((0..7).all { config.isEnabled(coreKeys[it]) }) "None" else "All", color = Mint, fontSize = 11.sp)
-            }
-            TextButton(onClick = { showCores = !showCores }, contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) {
+            TextButton(onClick = { showCores = !showCores }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)) {
                 Text(if (showCores) "Hide" else "Edit", color = Mint, fontSize = 11.sp)
             }
         }
@@ -215,37 +202,6 @@ private fun SettingsScreen() {
                     checked = config.isEnabled(coreKeys[index]),
                     valueColor = reading?.celsius?.let { Color(HudPalette.heatColor(it, config.textBrightness)) } ?: Muted,
                     onChecked = { save(config.withMetric(coreKeys[index], it)) }
-                )
-            }
-        }
-
-        Divider(color = Edge, thickness = 0.7.dp)
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Text("GPU sensors", color = MainText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-            Text("${gpuSensors.count { config.selectedThermalSensors.contains(it.id) }}/${gpuSensors.size}", color = Muted, fontSize = 11.sp)
-            TextButton(onClick = {
-                val allOn = gpuSensors.isNotEmpty() && gpuSensors.all { config.selectedThermalSensors.contains(it.id) }
-                var next = config
-                gpuSensors.forEach { sensor -> next = next.withMetric(HudConfig.SENSOR_PREFIX + sensor.id, !allOn) }
-                save(next)
-            }, contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) {
-                Text(if (gpuSensors.isNotEmpty() && gpuSensors.all { config.selectedThermalSensors.contains(it.id) }) "None" else "All", color = Mint, fontSize = 11.sp)
-            }
-            TextButton(onClick = { showGpuSensors = !showGpuSensors }, contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) {
-                Text(if (showGpuSensors) "Hide" else "Edit", color = Mint, fontSize = 11.sp)
-            }
-        }
-        if (showGpuSensors) {
-            if (gpuSensors.isEmpty()) {
-                Text("No GPU-labelled thermal sensors were found.", color = Muted, fontSize = 11.sp)
-            } else gpuSensors.forEach { sensor ->
-                CompactSensorRow(
-                    label = sensor.label,
-                    value = temp(sensor),
-                    detail = "${sensor.id} · ${sensor.sourceName}",
-                    checked = config.selectedThermalSensors.contains(sensor.id),
-                    valueColor = sensor.celsius?.let { Color(HudPalette.heatColor(it, config.textBrightness)) } ?: Muted,
-                    onChecked = { save(config.withMetric(HudConfig.SENSOR_PREFIX + sensor.id, it)) }
                 )
             }
         }
@@ -376,13 +332,6 @@ private fun SettingsScreen() {
                 "Small", "Large") { save(config.copy(scalePercent = it.toInt())) }
             SettingsSlider("Text brightness", "${config.textBrightness}%", config.textBrightness.toFloat(), 35f..100f, 12,
                 "Dim", "Bright") { save(config.copy(textBrightness = it.toInt())) }
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text("Temperature highlighting", color = MainText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                    Text("Green to red based on temperature", color = Muted, fontSize = 10.sp)
-                }
-                Switch(checked = config.highlightTemperatures, onCheckedChange = { save(config.copy(highlightTemperatures = it)) })
-            }
             SettingsSlider("Background opacity", "${config.backgroundOpacity}%", config.backgroundOpacity.toFloat(), 0f..65f, 12,
                 "Text only", "More visible") { save(config.copy(backgroundOpacity = it.toInt())) }
             Text("Label colour", color = MainText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)

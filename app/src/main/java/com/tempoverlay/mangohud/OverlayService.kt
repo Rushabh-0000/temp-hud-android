@@ -92,7 +92,7 @@ class OverlayService : Service() {
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            alpha = if (config.lockPosition) 0.79f else 1f
+            alpha = 1f
             layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_NEVER
             x = dp(config.positionXDp.toFloat())
             y = maxOf(dp(config.positionYDp.toFloat()), safeTopPx() + dp(4f))
@@ -205,7 +205,6 @@ class OverlayService : Service() {
                 previousRows.map { it.label } != nextRows.map { it.label } ||
                 previous.textColorIndex != nextConfig.textColorIndex ||
                 previous.textBrightness != nextConfig.textBrightness ||
-                previous.highlightTemperatures != nextConfig.highlightTemperatures ||
                 previous.backgroundOpacity != nextConfig.backgroundOpacity
             val positionChanged = previous.positionXDp != nextConfig.positionXDp || previous.positionYDp != nextConfig.positionYDp
             val touchChanged = previous.lockPosition != nextConfig.lockPosition
@@ -276,10 +275,8 @@ class OverlayService : Service() {
                 val baseline = (index * u(ROW_HEIGHT_DP) + u(11.5f)).toFloat()
                 val x = u(HORIZONTAL_PADDING_DP).toFloat()
                 val valueX = x + textPaint.measureText(row.label) + u(VALUE_GAP_DP)
-                val valueColor = if (config.highlightTemperatures) {
-                    row.reading?.celsius?.let { HudPalette.heatColor(it, config.textBrightness) }
-                        ?: Color.rgb(205, 212, 222)
-                } else HudPalette.labelColor(config.textColorIndex, config.textBrightness)
+                val valueColor = row.reading?.celsius?.let { HudPalette.heatColor(it, config.textBrightness) }
+                    ?: Color.argb((config.textBrightness * 175 / 100).coerceIn(50, 175), 205, 212, 222)
                 drawLegibleText(canvas, row.label, x, baseline, labelColor)
                 drawLegibleText(canvas, valueText(row), valueX, baseline, valueColor)
             }
@@ -288,7 +285,7 @@ class OverlayService : Service() {
         private fun drawLegibleText(canvas: Canvas, text: String, x: Float, baseline: Float, color: Int) {
             configureTextPaint(10f)
             outlinePaint.color = Color.argb(230, 0, 0, 0)
-            outlinePaint.strokeWidth = dp(1.8f).toFloat()
+            outlinePaint.strokeWidth = dp(1.2f).toFloat()
             canvas.drawText(text, x, baseline, outlinePaint.apply { textSize = textPaint.textSize; typeface = textPaint.typeface })
             textPaint.color = color
             canvas.drawText(text, x, baseline, textPaint)
