@@ -37,8 +37,10 @@ internal object SecureTokenStore {
         if (ivLength < 12 || ivLength > 16 || ivLength > buffer.remaining()) {
             throw IllegalStateException("Invalid encrypted token")
         }
-        val iv = ByteArray(ivLength).also(buffer::get)
-        val encrypted = ByteArray(buffer.remaining()).also(buffer::get)
+        val iv = ByteArray(ivLength)
+        buffer.get(iv)
+        val encrypted = ByteArray(buffer.remaining())
+        buffer.get(encrypted)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.DECRYPT_MODE, getOrCreateKey(), GCMParameterSpec(128, iv))
         return String(cipher.doFinal(encrypted), Charsets.UTF_8)
