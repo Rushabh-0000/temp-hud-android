@@ -42,7 +42,7 @@ Stable versions verified on 25 October 2026:
 - Android Gradle Plugin 9.4.1
 - Gradle 9.8.1
 - JDK 25
-- Android SDK 36
+- Android SDK 37 (target SDK 36)
 - AndroidX Core 1.19.1
 
 The CI workflow compiles the release variant without publishing an unsigned APK. Only the **Release Temp HUD** workflow publishes signed, installable release APKs.
