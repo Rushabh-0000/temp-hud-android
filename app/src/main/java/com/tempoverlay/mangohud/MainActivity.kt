@@ -72,7 +72,6 @@ class MainActivity : ComponentActivity() {
                     onPrimary = Bg,
                     onBackground = TextMain,
                     onSurface = TextMain
-                )
                 ),
                 typography = Typography(defaultFontFamily = FontFamily.SansSerif)
             ) {
