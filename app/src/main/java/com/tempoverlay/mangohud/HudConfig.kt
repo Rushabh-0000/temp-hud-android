@@ -1,9 +1,19 @@
 package com.tempoverlay.mangohud
 
 import android.content.Context
+import org.json.JSONArray
+import org.json.JSONObject
+import java.util.UUID
+
+data class CustomHudEntry(
+    val id: String = UUID.randomUUID().toString(),
+    val label: String,
+    val sensorId: String
+)
 
 data class HudConfig(
     val showCpuTemp: Boolean = true,
+    val showGpuTemp: Boolean = true,
     val showCore0Temp: Boolean = false,
     val showCore1Temp: Boolean = false,
     val showCore2Temp: Boolean = false,
@@ -12,11 +22,11 @@ data class HudConfig(
     val showCore5Temp: Boolean = false,
     val showCore6Temp: Boolean = false,
     val showCore7Temp: Boolean = false,
-    val showGpuTemp: Boolean = true,
-    val selectedGpuSensors: Set<String> = emptySet(),
+    val selectedThermalSensors: Set<String> = emptySet(),
+    val customEntries: List<CustomHudEntry> = emptyList(),
     val refreshMs: Int = 1500,
-    val transparency: Int = 0,
-    val scalePercent: Int = 90,
+    val backgroundOpacity: Int = 0,
+    val scalePercent: Int = 100,
     val textColorIndex: Int = 0,
     val textBrightness: Int = 100,
     val lockPosition: Boolean = false,
@@ -24,8 +34,16 @@ data class HudConfig(
     val positionYDp: Int = 100
 ) {
     fun save(context: Context) {
+        val entriesJson = JSONArray()
+        customEntries.forEach { entry ->
+            entriesJson.put(JSONObject()
+                .put("id", entry.id)
+                .put("label", entry.label)
+                .put("sensorId", entry.sensorId))
+        }
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putBoolean("cpu_temp", showCpuTemp)
+            .putBoolean("gpu_temp", showGpuTemp)
             .putBoolean("cpu0_temp", showCore0Temp)
             .putBoolean("cpu1_temp", showCore1Temp)
             .putBoolean("cpu2_temp", showCore2Temp)
@@ -34,11 +52,11 @@ data class HudConfig(
             .putBoolean("cpu5_temp", showCore5Temp)
             .putBoolean("cpu6_temp", showCore6Temp)
             .putBoolean("cpu7_temp", showCore7Temp)
-            .putBoolean("gpu_temp", showGpuTemp)
-            .putStringSet("selected_gpu_sensors", HashSet(selectedGpuSensors))
-            .putInt("refresh_ms", refreshMs.coerceIn(500, 3000))
-            .putInt("transparency", transparency.coerceIn(0, 65))
-            .putInt("scale_percent", scalePercent.coerceIn(70, 110))
+            .putStringSet("selected_thermal_sensors", HashSet(selectedThermalSensors))
+            .putString("custom_entries_json", entriesJson.toString())
+            .putInt("refresh_ms", refreshMs.coerceIn(500, 5000))
+            .putInt("transparency", backgroundOpacity.coerceIn(0, 65))
+            .putInt("scale_percent", scalePercent.coerceIn(70, 115))
             .putInt("text_color_index", textColorIndex.coerceIn(0, HudPalette.textOptions.lastIndex))
             .putInt("text_brightness", textBrightness.coerceIn(35, 100))
             .putBoolean("lock_position", lockPosition)
@@ -47,37 +65,35 @@ data class HudConfig(
             .apply()
     }
 
-    fun isEnabled(key: String): Boolean = when {
-        key == "cpuTemp" -> showCpuTemp
-        key == "core0Temp" -> showCore0Temp
-        key == "core1Temp" -> showCore1Temp
-        key == "core2Temp" -> showCore2Temp
-        key == "core3Temp" -> showCore3Temp
-        key == "core4Temp" -> showCore4Temp
-        key == "core5Temp" -> showCore5Temp
-        key == "core6Temp" -> showCore6Temp
-        key == "core7Temp" -> showCore7Temp
-        key == "gpuTemp" -> showGpuTemp
-        key.startsWith(GPU_SENSOR_PREFIX) -> selectedGpuSensors.contains(key.removePrefix(GPU_SENSOR_PREFIX))
-        else -> false
+    fun isEnabled(key: String): Boolean = when (key) {
+        "cpuTemp" -> showCpuTemp
+        "gpuTemp" -> showGpuTemp
+        "core0Temp" -> showCore0Temp
+        "core1Temp" -> showCore1Temp
+        "core2Temp" -> showCore2Temp
+        "core3Temp" -> showCore3Temp
+        "core4Temp" -> showCore4Temp
+        "core5Temp" -> showCore5Temp
+        "core6Temp" -> showCore6Temp
+        "core7Temp" -> showCore7Temp
+        else -> key.startsWith(SENSOR_PREFIX) && selectedThermalSensors.contains(key.removePrefix(SENSOR_PREFIX))
     }
 
-    fun withMetric(key: String, enabled: Boolean): HudConfig = when {
-        key == "cpuTemp" -> copy(showCpuTemp = enabled)
-        key == "core0Temp" -> copy(showCore0Temp = enabled)
-        key == "core1Temp" -> copy(showCore1Temp = enabled)
-        key == "core2Temp" -> copy(showCore2Temp = enabled)
-        key == "core3Temp" -> copy(showCore3Temp = enabled)
-        key == "core4Temp" -> copy(showCore4Temp = enabled)
-        key == "core5Temp" -> copy(showCore5Temp = enabled)
-        key == "core6Temp" -> copy(showCore6Temp = enabled)
-        key == "core7Temp" -> copy(showCore7Temp = enabled)
-        key == "gpuTemp" -> copy(showGpuTemp = enabled)
-        key.startsWith(GPU_SENSOR_PREFIX) -> {
-            val id = key.removePrefix(GPU_SENSOR_PREFIX)
-            copy(selectedGpuSensors = if (enabled) selectedGpuSensors + id else selectedGpuSensors - id)
-        }
-        else -> this
+    fun withMetric(key: String, enabled: Boolean): HudConfig = when (key) {
+        "cpuTemp" -> copy(showCpuTemp = enabled)
+        "gpuTemp" -> copy(showGpuTemp = enabled)
+        "core0Temp" -> copy(showCore0Temp = enabled)
+        "core1Temp" -> copy(showCore1Temp = enabled)
+        "core2Temp" -> copy(showCore2Temp = enabled)
+        "core3Temp" -> copy(showCore3Temp = enabled)
+        "core4Temp" -> copy(showCore4Temp = enabled)
+        "core5Temp" -> copy(showCore5Temp = enabled)
+        "core6Temp" -> copy(showCore6Temp = enabled)
+        "core7Temp" -> copy(showCore7Temp = enabled)
+        else -> if (key.startsWith(SENSOR_PREFIX)) {
+            val id = key.removePrefix(SENSOR_PREFIX)
+            copy(selectedThermalSensors = if (enabled) selectedThermalSensors + id else selectedThermalSensors - id)
+        } else this
     }
 
     fun coreTempEnabled(): Boolean =
@@ -88,19 +104,39 @@ data class HudConfig(
 
     fun selectedCount(): Int =
         (if (showCpuTemp) 1 else 0) +
+            (if (showGpuTemp) 1 else 0) +
             listOf(showCore0Temp, showCore1Temp, showCore2Temp, showCore3Temp,
                 showCore4Temp, showCore5Temp, showCore6Temp, showCore7Temp).count { it } +
-            (if (showGpuTemp) 1 else 0) + selectedGpuSensors.size
+            selectedThermalSensors.size + customEntries.size
 
     companion object {
-        const val GPU_SENSOR_PREFIX = "gpuSensor:"
+        const val SENSOR_PREFIX = "sensor:"
         private const val PREFS = "temp_hud_settings"
         private const val KEY_RUNNING = "overlay_running"
 
         fun load(context: Context): HudConfig {
             val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            val selected = p.getStringSet(
+                "selected_thermal_sensors",
+                p.getStringSet("selected_gpu_sensors", emptySet())
+            )?.toSet() ?: emptySet()
+            val entries = try {
+                val array = JSONArray(p.getString("custom_entries_json", "[]"))
+                buildList {
+                    for (i in 0 until array.length()) {
+                        val item = array.optJSONObject(i) ?: continue
+                        val label = item.optString("label", "").trim()
+                        val sensorId = item.optString("sensorId", "").trim()
+                        if (label.isNotEmpty() && sensorId.isNotEmpty()) {
+                            add(CustomHudEntry(item.optString("id", UUID.randomUUID().toString()), label, sensorId))
+                        }
+                    }
+                }
+            } catch (_: Exception) { emptyList() }
+
             return HudConfig(
                 showCpuTemp = p.getBoolean("cpu_temp", true),
+                showGpuTemp = p.getBoolean("gpu_temp", true),
                 showCore0Temp = p.getBoolean("cpu0_temp", false),
                 showCore1Temp = p.getBoolean("cpu1_temp", false),
                 showCore2Temp = p.getBoolean("cpu2_temp", false),
@@ -109,11 +145,11 @@ data class HudConfig(
                 showCore5Temp = p.getBoolean("cpu5_temp", false),
                 showCore6Temp = p.getBoolean("cpu6_temp", false),
                 showCore7Temp = p.getBoolean("cpu7_temp", false),
-                showGpuTemp = p.getBoolean("gpu_temp", true),
-                selectedGpuSensors = p.getStringSet("selected_gpu_sensors", emptySet())?.toSet() ?: emptySet(),
-                refreshMs = p.getInt("refresh_ms", 1500).coerceIn(500, 3000),
-                transparency = p.getInt("transparency", 0).coerceIn(0, 65),
-                scalePercent = p.getInt("scale_percent", 90).coerceIn(70, 110),
+                selectedThermalSensors = selected,
+                customEntries = entries,
+                refreshMs = p.getInt("refresh_ms", 1500).coerceIn(500, 5000),
+                backgroundOpacity = p.getInt("transparency", 0).coerceIn(0, 65),
+                scalePercent = p.getInt("scale_percent", 100).coerceIn(70, 115),
                 textColorIndex = p.getInt("text_color_index", 0).coerceIn(0, HudPalette.textOptions.lastIndex),
                 textBrightness = p.getInt("text_brightness", 100).coerceIn(35, 100),
                 lockPosition = p.getBoolean("lock_position", false),
@@ -135,7 +171,7 @@ data class HudConfig(
 object HudPalette {
     data class TextOption(val name: String, val argb: Int)
     val textOptions = listOf(
-        TextOption("White", 0xFFF0F4F8.toInt()),
+        TextOption("White", 0xFFF8FAFC.toInt()),
         TextOption("Mint", 0xFF8CFFD0.toInt()),
         TextOption("Cyan", 0xFF80DFFF.toInt()),
         TextOption("Amber", 0xFFFFD08A.toInt()),

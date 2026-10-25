@@ -7,84 +7,92 @@ data class ThermalReading(
     val id: String,
     val label: String,
     val celsius: Float?,
-    val sourceNames: List<String>
+    val sourceName: String
 )
 
 data class TemperatureSnapshot(
     val cpuOverall: ThermalReading? = null,
     val cpuCores: List<ThermalReading?> = List(8) { null },
     val gpuOverall: ThermalReading? = null,
-    val gpuSensors: List<ThermalReading> = emptyList()
+    val allSensors: List<ThermalReading> = emptyList()
 ) {
     fun readingFor(key: String): ThermalReading? = when {
         key == "cpuTemp" -> cpuOverall
         key == "gpuTemp" -> gpuOverall
         key.startsWith("core") && key.endsWith("Temp") ->
             key.removePrefix("core").removeSuffix("Temp").toIntOrNull()?.let { cpuCores.getOrNull(it) }
-        key.startsWith(HudConfig.GPU_SENSOR_PREFIX) ->
-            gpuSensors.firstOrNull { it.id == key.removePrefix(HudConfig.GPU_SENSOR_PREFIX) }
+        key.startsWith(HudConfig.SENSOR_PREFIX) ->
+            allSensors.firstOrNull { it.id == key.removePrefix(HudConfig.SENSOR_PREFIX) }
         else -> null
     }
 }
 
 class SensorReader {
     private data class ThermalZone(val directory: File, val type: String) {
-        val zoneName: String get() = directory.name
-        val sourceName: String get() = "$type · $zoneName"
-    }
-    private data class ZoneValue(val zone: ThermalZone, val celsius: Float) {
-        val sourceName: String get() = zone.sourceName
+        val id: String get() = directory.name
+        val sourceName: String get() = "$type · $id"
     }
 
-    private val zoneCatalog: List<ThermalZone> by lazy {
-        File("/sys/class/thermal")
-            .listFiles { _, name -> name.matches(ZONE_PATTERN) }
-            ?.mapNotNull { dir ->
-                val type = readText(File(dir, "type"))?.trim()?.lowercase(Locale.US)
-                if (type.isNullOrBlank()) null else ThermalZone(dir, type)
-            } ?: emptyList()
+    private data class ZoneValue(val zone: ThermalZone, val celsius: Float) {
+        val sourceName: String get() = zone.sourceName
+        fun asReading(): ThermalReading = ThermalReading(zone.id, zone.type, celsius, sourceName)
+    }
+
+    private val catalog: List<ThermalZone> by lazy {
+        File("/sys/class/thermal").listFiles { _, name -> name.startsWith("thermal_zone") }
+            ?.mapNotNull { directory ->
+                val type = readText(File(directory, "type"))?.trim()?.lowercase(Locale.US)
+                if (type.isNullOrEmpty() || !directory.name.removePrefix("thermal_zone").all { it.isDigit() }) {
+                    null
+                } else ThermalZone(directory, type)
+            }?.sortedBy { it.id.removePrefix("thermal_zone").toIntOrNull() ?: Int.MAX_VALUE }
+            ?: emptyList()
     }
 
     fun sample(config: HudConfig, includeAllForSettings: Boolean = false): TemperatureSnapshot {
-        val cpuZones = zoneCatalog.filter { isCpuZone(it.type) }
-        val gpuZones = zoneCatalog.filter { isGpuZone(it.type) }
+        val selectedIds = config.selectedThermalSensors + config.customEntries.map { it.sensorId }
         val readCpu = includeAllForSettings || config.cpuTempEnabled()
-        val readGpu = includeAllForSettings || config.showGpuTemp || config.selectedGpuSensors.isNotEmpty()
-        val cpuValues = if (readCpu) cpuZones.mapNotNull(::readTemperature) else emptyList()
-        val gpuValues = if (readGpu) gpuZones.mapNotNull(::readTemperature) else emptyList()
+        val readGpu = includeAllForSettings || config.showGpuTemp
+        val toRead = if (includeAllForSettings) catalog else catalog.filter { zone ->
+            zone.id in selectedIds ||
+                (readCpu && isCpuZone(zone.type)) ||
+                (readGpu && isGpuZone(zone.type))
+        }
+        val values = toRead.mapNotNull(::readTemperature)
+        val cpuValues = values.filter { isCpuZone(it.zone.type) }
+        val gpuValues = values.filter { isGpuZone(it.zone.type) }
 
         val cores = coreReadings(cpuValues)
-        val mappedCores = cores.mapNotNull { it }
-        val cpuSourceValues = if (mappedCores.isNotEmpty()) mappedCores.mapNotNull { reading ->
-            val source = cpuValues.firstOrNull { it.sourceName == reading.sourceNames.firstOrNull() }
-            source
-        } else dedupeZones(cpuValues)
-        val cpuAverage = cpuSourceValues.map { it.celsius }.average().takeIf {
-            cpuSourceValues.isNotEmpty() && it.isFinite()
-        }?.toFloat()
-
-        val uniqueGpu = dedupeZones(gpuValues)
-        val gpuAverage = uniqueGpu.map { it.celsius }.average().takeIf {
-            uniqueGpu.isNotEmpty() && it.isFinite()
-        }?.toFloat()
-
-        val gpuReadings = uniqueGpu.sortedBy { it.zone.zoneName }.mapIndexed { index, item ->
-            ThermalReading(
-                id = item.zone.zoneName,
-                label = "GPU SENSOR ${index + 1}",
-                celsius = item.celsius,
-                sourceNames = listOf(item.sourceName)
-            )
+        val mappedCoreSources = cores.mapNotNull { it?.sourceName }.toSet()
+        val overallCpuSources = if (mappedCoreSources.isNotEmpty()) {
+            cpuValues.filter { it.sourceName in mappedCoreSources }
+        } else {
+            deduplicatePairs(cpuValues)
         }
+        val cpuAverage = average(overallCpuSources)
+        val uniqueGpu = deduplicatePairs(gpuValues)
+        val gpuAverage = average(uniqueGpu)
 
         return TemperatureSnapshot(
-            cpuOverall = if (readCpu) ThermalReading("cpuTemp", "CPU", cpuAverage,
-                cpuSourceValues.map { it.sourceName }) else null,
+            cpuOverall = if (readCpu) ThermalReading(
+                id = "cpuTemp", label = "CPU", celsius = cpuAverage,
+                sourceName = if (overallCpuSources.isEmpty()) "No readable CPU-labelled sensor"
+                    else overallCpuSources.joinToString { it.sourceName }
+            ) else null,
             cpuCores = cores,
-            gpuOverall = if (readGpu) ThermalReading("gpuTemp", "GPU", gpuAverage,
-                uniqueGpu.map { it.sourceName }) else null,
-            gpuSensors = gpuReadings
+            gpuOverall = if (readGpu) ThermalReading(
+                id = "gpuTemp", label = "GPU", celsius = gpuAverage,
+                sourceName = if (uniqueGpu.isEmpty()) "No readable GPU-labelled sensor"
+                    else uniqueGpu.joinToString { it.sourceName }
+            ) else null,
+            allSensors = values.map { it.asReading() }
         )
+    }
+
+    private fun average(values: List<ZoneValue>): Float? {
+        if (values.isEmpty()) return null
+        val mean = values.map { it.celsius }.average()
+        return mean.takeIf { it.isFinite() }?.toFloat()
     }
 
     private fun readTemperature(zone: ThermalZone): ZoneValue? {
@@ -94,30 +102,27 @@ class SensorReader {
     }
 
     private fun coreReadings(values: List<ZoneValue>): List<ThermalReading?> {
-        val grouped = values.mapNotNull { value ->
-            coreIndex(value.zone.type)?.let { it to value }
-        }.groupBy({ it.first }, { it.second })
+        val grouped = values.mapNotNull { value -> coreIndex(value.zone.type)?.let { it to value } }
+            .groupBy({ it.first }, { it.second })
         return (0..7).map { core ->
-            val chosen = grouped[core].orEmpty().maxWithOrNull(
-                compareBy<ZoneValue> { sourcePreference(it.zone.type) }.thenBy { it.zone.zoneName }
+            val picked = grouped[core].orEmpty().maxWithOrNull(
+                compareBy<ZoneValue> { sourcePreference(it.zone.type) }.thenBy { it.zone.id }
             ) ?: return@map null
-            ThermalReading(
-                id = "core${core}Temp", label = "CPU $core", celsius = chosen.celsius,
-                sourceNames = listOf(chosen.sourceName)
-            )
+            ThermalReading("core${core}Temp", "CPU $core", picked.celsius, picked.sourceName)
         }
     }
 
-    private fun dedupeZones(values: List<ZoneValue>): List<ZoneValue> =
+    private fun deduplicatePairs(values: List<ZoneValue>): List<ZoneValue> =
         values.groupBy { value ->
-            if (value.zone.type.endsWith("-usr") || value.zone.type.endsWith("-step")) {
-                "paired:" + value.zone.type.replace(Regex("-(usr|step)$"), "")
+            val type = value.zone.type
+            if (type.endsWith("-usr") || type.endsWith("-step")) {
+                "paired:" + type.removeSuffix("-usr").removeSuffix("-step")
             } else {
-                value.zone.type + ":" + value.zone.zoneName
+                type + ":" + value.zone.id
             }
         }.values.mapNotNull { group ->
-            group.maxWithOrNull(compareBy<ZoneValue> { sourcePreference(it.zone.type) }.thenBy { it.zone.zoneName })
-        }
+            group.maxWithOrNull(compareBy<ZoneValue> { sourcePreference(it.zone.type) }.thenBy { it.zone.id })
+        }.sortedBy { it.zone.id }
 
     private fun sourcePreference(type: String): Int = when {
         type.endsWith("-usr") -> 3
@@ -138,8 +143,7 @@ class SensorReader {
         val patterns = listOf(
             Regex("^cpu([0-7])(?:$|[-_].*)"),
             Regex("^cpu[-_]core[-_]?([0-7])(?:$|[-_].*)"),
-            Regex("^cpu_core[-_]?([0-7])(?:$|[-_].*)"),
-            Regex("^cpu[-_ ]([0-7])[-_ ]core(?:$|[-_].*)")
+            Regex("^cpu_core[-_]?([0-7])(?:$|[-_].*)")
         )
         for (pattern in patterns) {
             val match = pattern.find(type) ?: continue
@@ -151,8 +155,4 @@ class SensorReader {
     private fun readNumber(file: File): Long? = readText(file)?.trim()?.toLongOrNull()
     private fun readText(file: File): String? =
         try { file.readText().lineSequence().firstOrNull() } catch (_: Exception) { null }
-
-    companion object {
-        private val ZONE_PATTERN = Regex("thermal_zone[0-9]+")
-    }
 }
