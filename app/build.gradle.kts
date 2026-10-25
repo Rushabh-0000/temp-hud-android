@@ -57,13 +57,15 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+}
 
-    kotlinOptions {
-        jvmTarget = "17"
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
 }
 
 dependencies {
-    // Latest stable Core compatible with this project's available Android SDK (API 36).
+    // Latest stable Core available for the API 36 build environment used by CI.
     implementation("androidx.core:core:1.18.0")
 }
