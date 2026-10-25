@@ -68,7 +68,7 @@ jobs:
       - name: Upload optimized installable test APK
         uses: actions/upload-artifact@v7
         with:
-          name: temp-hud-release-test-apk
+          name: temp-hud-temperature-only-apk
           path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 7
