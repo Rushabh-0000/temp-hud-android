@@ -9,7 +9,7 @@ def releaseKeyPassword = System.getenv("ANDROID_KEY_PASSWORD")
 
 android {
     namespace = 'com.tempoverlay.mangohud'
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = 'com.tempoverlay.mangohud'
