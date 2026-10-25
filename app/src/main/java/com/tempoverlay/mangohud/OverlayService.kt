@@ -253,7 +253,7 @@ class OverlayService : Service() {
         override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
             val rowList = currentRows()
             val maxRowWidth = rowList.maxOfOrNull { rowWidth(it) } ?: 0f
-            val totalWidth = maxOf(u(MIN_WIDTH_DP), maxRowWidth + u(HORIZONTAL_PADDING_DP * 2))
+            val totalWidth = maxOf(u(MIN_WIDTH_DP), (maxRowWidth + u(HORIZONTAL_PADDING_DP * 2)).toInt())
             val totalHeight = maxOf(dp(3f), rowList.size * u(ROW_HEIGHT_DP) + dp(2f))
             setMeasuredDimension(totalWidth, totalHeight)
         }
@@ -327,5 +327,4 @@ class OverlayService : Service() {
             return true
         }
     }
-
-
+}
