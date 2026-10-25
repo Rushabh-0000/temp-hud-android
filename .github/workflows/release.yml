@@ -35,13 +35,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-      - name: Confirm repository is private
-        run: |
-          private="$(gh api "repos/$GITHUB_REPOSITORY" --jq '.private')"
-          if [ "$private" != "true" ]; then
-            echo "::error::Make this repository private before creating a signed release."
-            exit 1
-          fi
       - name: Validate signing secrets
         shell: bash
         run: |
