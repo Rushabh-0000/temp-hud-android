@@ -39,7 +39,7 @@ class OverlayService : Service() {
 
     private var windowManager: WindowManager? = null
     private var hudView: HudView? = null
-    private var layoutParams: WindowManager.LayoutParams? = null
+    private var hudWindowParams: WindowManager.LayoutParams? = null
     private var pollingThread: HandlerThread? = null
     private var pollingHandler: Handler? = null
     private val sensorReader = SensorReader()
@@ -97,7 +97,7 @@ class OverlayService : Service() {
             x = dp(config.positionXDp.toFloat())
             y = maxOf(dp(config.positionYDp.toFloat()), safeTopPx() + dp(4f))
         }
-        layoutParams = params
+        hudWindowParams = params
 
         try {
             windowManager?.addView(view, params)
@@ -210,7 +210,7 @@ class OverlayService : Service() {
             snapshot = nextSnapshot
             if (layoutChanged) requestLayout()
 
-            val params = layoutParams
+            val params = hudWindowParams
             if (params != null) {
                 var needUpdate = layoutChanged || positionChanged || touchChanged
                 params.width = WindowManager.LayoutParams.WRAP_CONTENT
@@ -290,7 +290,7 @@ class OverlayService : Service() {
 
         override fun onTouchEvent(event: MotionEvent): Boolean {
             if (config.lockPosition) return false
-            val params = layoutParams ?: return false
+            val params = hudWindowParams ?: return false
             val manager = windowManager ?: return false
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
@@ -326,19 +326,4 @@ class OverlayService : Service() {
         }
     }
 
-    private fun dp(value: Float): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
-    private fun pxToDp(value: Int): Int = (value / resources.displayMetrics.density).toInt()
-    private fun safeTopPx(): Int = try {
-        windowManager?.currentWindowMetrics?.windowInsets?.displayCutout?.safeInsetTop ?: 0
-    } catch (_: Exception) { 0 }
 
-    private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(CHANNEL, "Temperature overlay", NotificationManager.IMPORTANCE_LOW).apply {
-                description = "Notification for the user-started temperature HUD"
-                setShowBadge(false)
-            }
-            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
-        }
-    }
-}
