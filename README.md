@@ -31,7 +31,7 @@ Generate the persistent keystore plus a copy/paste text file from a Linux/macOS/
 bash scripts/generate-signing-key.sh
 ```
 
-The command creates `temp-hud-release.p12` and `github-release-secrets.txt` in the workspace root. Copy each value into the matching repository Action secret:
+The command (now included at `scripts/generate-signing-key.sh`) creates `temp-hud-release.p12` and `github-release-secrets.txt` in the workspace root. Both files are Git-ignored. Copy each value into the matching repository Action secret:
 - `ANDROID_KEYSTORE_BASE64`
 - `ANDROID_KEYSTORE_PASSWORD`
 - `ANDROID_KEY_ALIAS`

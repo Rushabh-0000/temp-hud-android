@@ -38,6 +38,23 @@ android {
         }
     }
 
+    packaging {
+        resources {
+            // Runtime code/resources are handled by R8 and resource shrinking below.
+            // Remove only metadata that is never read by the app at runtime.
+            excludes += setOf(
+                "META-INF/AL2.0",
+                "META-INF/LGPL2.1",
+                "META-INF/**/LICENSE*",
+                "META-INF/**/NOTICE*",
+                "META-INF/DEPENDENCIES",
+                "META-INF/*.version",
+                "META-INF/version-control-info.textproto",
+                "kotlin-tooling-metadata.json"
+            )
+        }
+    }
+
     buildTypes {
         getByName("debug") {
             applicationIdSuffix = ".debug"
