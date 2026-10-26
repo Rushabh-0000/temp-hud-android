@@ -1,6 +1,6 @@
 # Temp HUD
 
-Current development version: **0.7.7**.
+Current development version: **0.7.8**.
 
 Compact MangoHud-inspired Android temperature overlay for Android 11+, written in Kotlin using Android's built-in Material-themed Views to keep the APK lean.
 
@@ -11,13 +11,14 @@ Compact MangoHud-inspired Android temperature overlay for Android 11+, written i
 - Only one sensor sampler runs at a time: the overlay service while active, or the visible settings screen while stopped. Opening a sensor picker asks the active sampler to include all thermal zones on its next scheduled read; it does not launch another concurrent sensor scan.
 
 ## Sensor selection
-- Overall CPU and GPU temperatures appear first. CPU 0–7 can be selected independently.
-- CPU cores and GPU sources show Use and Step checkboxes side by side for each readable paired zone. Overlay labels remain clean (`CPU 0`, `GPU 0`) without usr/step. CPU and GPU overall averages each have a mutually exclusive Use/Step selector; Use is the default.
+- Overall CPU and GPU temperatures appear first. The average selectors show the exact **usr** or **step** variant; if the selected variant is not readable, the value is **N/A**.
+- CPU 0–7 can be selected independently. Source editor columns are labelled **usr** and **step**, and the two variants remain independently selectable.
+- CPU sources and GPU-labelled sources show **usr**/**step** checkboxes side by side for each available variant. When both variants for one label are selected, the HUD displays one row and prefers **usr**; it uses **step** only when **usr** is not selected. Overlay labels remain clean (`CPU 0`, `GPU 0`) without variant suffixes. Both overall averages default to **usr** and use a mutually exclusive selector.
 - These are thermal-zone readings exposed by the phone firmware, not guaranteed physical GPU-core sensors. If firmware exposes no suitable sensor, the app shows N/A.
 - Any readable thermal-zone sensor can be selected from Browse, and custom rows can pair a custom label with any selected temperature sensor.
 
-## UI and floating-window fixes in 0.7.7
-- Replaced the custom-measured divider with a normal one-pixel Android View. The previous divider matched the separator colour but could expand into a large blank block in floating-window mode. The ScrollView child now uses explicit ScrollView.LayoutParams with WRAP_CONTENT and reasserts natural content measurement after multi-window/configuration changes.
+## UI and floating-window fixes in 0.7.8
+- The settings screen remains a native View hierarchy in a vertical ScrollView whose only content child uses WRAP_CONTENT height and no viewport fill, weight, or fixed-height panel. Dividers are normal one-pixel Views. Multi-window/configuration callbacks reassert natural content measurement, and expanded sections, sensor search, and scroll position now survive Activity recreation.
 - The settings header uses the app launcher icon; live readings and CPU/GPU average-source selection are grouped into distinct compact cards. Buttons provide touch ripple feedback. The interface remains built with native Android Views to avoid adding Compose runtime size.
 
 ## Layout, sensor and low-allocation fixes in 0.7.5
@@ -35,7 +36,7 @@ No Internet permission, analytics, updater UI, APK download/install code, or upd
 ## One workflow and release signing
 The only workflow is `.github/workflows/android.yml`. It builds on pushes and has a manual option to publish a signed release using persistent repository secrets. SDK Manager skips installation if Android 36 and apksigner are already present; Gradle build caching is enabled.
 
-Use the persistent keystore and four GitHub Actions secrets you already configured. This commit triggers a patch release from the latest GitHub Release tag. Future patch releases can use a commit message containing `[release]`; that path bumps only the patch number. Manual workflow dispatch still lets you choose patch/minor/major.
+Use the persistent keystore and four GitHub Actions secrets you already configured. A commit message containing `[release]` triggers a patch release from the latest GitHub Release tag. Manual workflow dispatch lets you choose patch/minor/major.
 - `ANDROID_KEYSTORE_BASE64`
 - `ANDROID_KEYSTORE_PASSWORD`
 - `ANDROID_KEY_ALIAS`
@@ -44,4 +45,4 @@ Use the persistent keystore and four GitHub Actions secrets you already configur
 The key-generation helper is not in the repository. Back up your keystore securely; every update must use the same signing key. Never commit or post the keystore, passwords or Base64 value. Then run **Temp HUD Build and Release** manually with **Publish release** enabled.
 
 ## Toolchain
-AGP 9.3.1, Kotlin 2.4.21, Gradle 9.7.0, JDK 25, compile/target SDK 36, min SDK 30. There are no Compose or AndroidX UI dependencies; the screens use native Android Views. The launcher icon is a vector adaptive icon. Release code/resources are minified and shrunk with R8. The settings Activity and overlay share one app process to avoid duplicating Android's runtime in memory.
+AGP 9.3.1, Kotlin 2.4.21, Gradle 9.7.0, JDK 25, compile/target SDK 36, min SDK 30. There are no Compose or AndroidX UI dependencies; the screens use native Android Views. The launcher icon is a vector adaptive icon. Release code/resources are minified and shrunk with R8. The settings Activity and overlay share one app process to avoid duplicating Android's runtime in memory. On Android 12+, locked touch-through mode respects the device's obscuring-opacity limit (at most 0.8); unlocked mode remains at full window opacity. Android's window-level opacity rule means locked text can appear slightly less bright while pass-through is enabled.

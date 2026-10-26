@@ -116,7 +116,7 @@ class OverlayService : Service() {
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            alpha = 1f
+            alpha = overlayWindowAlpha(config.lockPosition)
             layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_NEVER
             x = dp(config.positionXDp.toFloat())
             y = maxOf(dp(config.positionYDp.toFloat()), safeTopPx() + dp(4f))
@@ -132,8 +132,8 @@ class OverlayService : Service() {
             return
         }
 
-        // This service is isolated in :overlay; only its native View, sensor reader,
-        // and settings data are loaded while it runs in the background.
+        // The Activity and service intentionally share one process to avoid duplicating
+        // the Android runtime. The Activity stops its preview sampler while this service runs.
         pollingThread = HandlerThread("TempHudThermalPoll", Process.THREAD_PRIORITY_BACKGROUND).also { it.start() }
         pollingHandler = Handler(pollingThread!!.looper)
         // Start the ticker only from the first ACTION_START. Posting it here too can race
@@ -144,6 +144,19 @@ class OverlayService : Service() {
         var flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
         if (locked) flags = flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
         return flags
+    }
+
+    private fun overlayWindowAlpha(locked: Boolean): Float {
+        if (!locked || Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return 1f
+        // Android 12+ restricts touch pass-through through FLAG_NOT_TOUCHABLE overlays.
+        // Respect the device's actual obscuring-opacity limit; keep unlocked text at full opacity.
+        val systemLimit = try {
+            getSystemService(android.hardware.input.InputManager::class.java)
+                ?.maximumObscuringOpacityForTouch ?: 0.8f
+        } catch (_: Exception) {
+            0.8f
+        }
+        return systemLimit.coerceIn(0f, 0.8f)
     }
 
     private fun dp(value: Float): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
@@ -193,8 +206,23 @@ class OverlayService : Service() {
     private fun rows(config: HudConfig, snapshot: TemperatureSnapshot): List<OverlayRow> = buildList {
         if (config.showCpuTemp) add(OverlayRow("CPU", snapshot.cpuOverall))
         if (config.showGpuTemp) add(OverlayRow("GPU", snapshot.gpuOverall))
-        snapshot.allSensors.filter { config.selectedThermalSensors.contains(it.id) }
-            .forEach { add(OverlayRow(SensorSourceLabels.overlayLabel(it), it)) }
+        val selectedGroups = snapshot.allSensors
+            .filter { config.selectedThermalSensors.contains(it.id) }
+            .groupBy { SensorSourceLabels.overlayLabel(it) }
+        selectedGroups.values.forEach { candidates ->
+            // Keep the HUD compact if both variants are checked for the same source:
+            // usr wins deterministically; step is shown when usr is not selected.
+            val chosen = candidates.minWithOrNull(
+                compareBy<ThermalReading> {
+                    when (SensorSourceLabels.sourceVariant(it)) {
+                        "usr" -> 0
+                        "step" -> 1
+                        else -> 2
+                    }
+                }.thenBy { it.id.removePrefix("thermal_zone").toIntOrNull() ?: Int.MAX_VALUE }
+            ) ?: return@forEach
+            add(OverlayRow(SensorSourceLabels.overlayLabel(chosen), chosen))
+        }
         config.customEntries.forEach { custom ->
             add(OverlayRow(custom.label, snapshot.allSensors.firstOrNull { it.id == custom.sensorId }))
         }
@@ -236,7 +264,7 @@ class OverlayService : Service() {
                 params.width = WindowManager.LayoutParams.WRAP_CONTENT
                 params.height = WindowManager.LayoutParams.WRAP_CONTENT
                 // Keep the visual opacity identical for locked and unlocked states.
-                params.alpha = 1f
+                params.alpha = overlayWindowAlpha(nextConfig.lockPosition)
                 this.alpha = 1f
                 if (touchChanged) {
                     params.flags = makeFlags(nextConfig.lockPosition)

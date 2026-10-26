@@ -130,6 +130,14 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         config = HudConfig.load(this)
+        // Keep expanded editors and the user's scroll position during rotation,
+        // multi-window resizing and Activity recreation.
+        showCores = savedInstanceState?.getBoolean("ui_show_cores") ?: false
+        showGpuSources = savedInstanceState?.getBoolean("ui_show_gpu_sources") ?: false
+        showAllSensors = savedInstanceState?.getBoolean("ui_show_all_sensors") ?: false
+        showCustomEditor = savedInstanceState?.getBoolean("ui_show_custom_editor") ?: false
+        showDisplaySettings = savedInstanceState?.getBoolean("ui_show_display_settings") ?: false
+        searchText = savedInstanceState?.getString("ui_sensor_search").orEmpty()
         window.statusBarColor = Ui.BG
         window.navigationBarColor = Ui.BG
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -138,6 +146,19 @@ class MainActivity : Activity() {
             }
         }
         renderUi()
+        val savedScrollY = savedInstanceState?.getInt("ui_scroll_y", 0) ?: 0
+        if (savedScrollY > 0) scrollView?.post { scrollView?.scrollTo(0, savedScrollY) }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean("ui_show_cores", showCores)
+        outState.putBoolean("ui_show_gpu_sources", showGpuSources)
+        outState.putBoolean("ui_show_all_sensors", showAllSensors)
+        outState.putBoolean("ui_show_custom_editor", showCustomEditor)
+        outState.putBoolean("ui_show_display_settings", showDisplaySettings)
+        outState.putString("ui_sensor_search", searchText)
+        outState.putInt("ui_scroll_y", scrollView?.scrollY ?: 0)
+        super.onSaveInstanceState(outState)
     }
 
     override fun onStart() {
@@ -422,7 +443,7 @@ class MainActivity : Activity() {
         if (showCores) buildSourceGroups(column, false)
 
         column.addView(divider(), dividerParams(top = 7, bottom = 7))
-        addExpandableHeader(column, "GPU cores", gpuCountLabel(), showGpuSources, Ui.BLUE) {
+        addExpandableHeader(column, "GPU sources", gpuCountLabel(), showGpuSources, Ui.BLUE) {
             showGpuSources = !showGpuSources
             rebuildKeepingScroll()
             requestCatalogMode(needsCatalog())
@@ -509,7 +530,7 @@ class MainActivity : Activity() {
         box.addView(label(title, 11f, Ui.WHITE, true), LinearLayout.LayoutParams(0, -2, 1f))
         val group = RadioGroup(this).apply { orientation = RadioGroup.HORIZONTAL }
         val usr = RadioButton(this).apply {
-            text = "Use"; textSize = 11f; setTextColor(Ui.WHITE)
+            text = "usr"; textSize = 11f; setTextColor(Ui.WHITE)
             buttonTintList = ColorStateList.valueOf(if (cpu) Ui.MINT else Ui.BLUE)
             id = View.generateViewId(); isChecked = current != "step"
         }
@@ -548,7 +569,7 @@ class MainActivity : Activity() {
         }.groupBy { it.name }.toSortedMap(compareBySourceName())
 
         if (grouped.isEmpty()) {
-            val message = if (isGpu) "No GPU Use/Step sources are exposed." else "No CPU Use/Step sources are exposed."
+            val message = if (isGpu) "No GPU usr/step sources are exposed." else "No CPU usr/step sources are exposed."
             parent.addView(label(message, 11f, Ui.MUTED, false).apply {
                 setPadding(dp(8), dp(6), dp(8), dp(10))
             })
@@ -571,7 +592,7 @@ class MainActivity : Activity() {
                     setPadding(dp(2), dp(2), dp(4), dp(3))
                 }
                 if (option == null) {
-                    cell.addView(label(if (variant == "usr") "Use —" else "Step —", 10f, Ui.MUTED, false)
+                    cell.addView(label(if (variant == "usr") "usr —" else "step —", 10f, Ui.MUTED, false)
                         .apply { setPadding(0, dp(8), 0, dp(8)) }, matchWrap())
                 } else {
                     val readRow = LinearLayout(this).apply {
@@ -579,7 +600,7 @@ class MainActivity : Activity() {
                         gravity = Gravity.CENTER_VERTICAL
                     }
                     val check = CheckBox(this).apply {
-                        text = if (variant == "usr") "Use" else "Step"
+                        text = variant
                         textSize = 10f
                         setTextColor(Ui.WHITE)
                         buttonTintList = ColorStateList.valueOf(if (isGpu) Ui.BLUE else Ui.MINT)

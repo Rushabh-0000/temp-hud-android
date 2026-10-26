@@ -128,12 +128,9 @@ class SensorReader {
         val selectedGpuValues = selectVariant(gpuValues, config.gpuAverageVariant)
 
         val cores = coreReadings(selectedCpuValues)
-        val mappedCoreSources = cores.mapNotNull { it?.sourceName }.toSet()
-        val overallCpuSources = if (mappedCoreSources.isNotEmpty()) {
-            selectedCpuValues.filter { it.sourceName in mappedCoreSources }
-        } else {
-            deduplicatePairs(selectedCpuValues)
-        }
+        // Average every distinct readable CPU-labelled zone for the chosen variant.
+        // Pair normalization below prevents Qualcomm usr/step aliases from being counted twice.
+        val overallCpuSources = deduplicatePairs(selectedCpuValues)
         val cpuAverage = average(overallCpuSources)
         val uniqueGpu = deduplicatePairs(selectedGpuValues)
         val gpuAverage = average(uniqueGpu)
@@ -159,12 +156,7 @@ class SensorReader {
 
     private fun selectVariant(values: List<ZoneValue>, variant: String): List<ZoneValue> =
         values.filter { value ->
-            val type = value.zone.type
-            when {
-                type.endsWith("-usr") -> variant == "usr"
-                type.endsWith("-step") -> variant == "step"
-                else -> false
-            }
+            SensorSourceLabels.sourceVariant(value.zone.type) == variant
         }
 
     private fun average(values: List<ZoneValue>): Float? {
@@ -195,8 +187,8 @@ class SensorReader {
     private fun deduplicatePairs(values: List<ZoneValue>): List<ZoneValue> =
         values.groupBy { value ->
             val type = value.zone.type
-            if (type.endsWith("-usr") || type.endsWith("-step")) {
-                "paired:" + type.removeSuffix("-usr").removeSuffix("-step")
+            if (SensorSourceLabels.sourceVariant(type) != null) {
+                "paired:" + type.replace(SOURCE_VARIANT_SUFFIX_PATTERN, "")
             } else {
                 type + ":" + value.zone.id
             }
@@ -204,9 +196,9 @@ class SensorReader {
             group.maxWithOrNull(compareBy<ZoneValue> { sourcePreference(it.zone.type) }.thenBy { it.zone.id })
         }.sortedBy { it.zone.id }
 
-    private fun sourcePreference(type: String): Int = when {
-        type.endsWith("-usr") -> 3
-        type.endsWith("-step") -> 2
+    private fun sourcePreference(type: String): Int = when (SensorSourceLabels.sourceVariant(type)) {
+        "usr" -> 3
+        "step" -> 2
         else -> 1
     }
 
@@ -232,6 +224,7 @@ class SensorReader {
         try { file.readText().lineSequence().firstOrNull() } catch (_: Exception) { null }
 
     private companion object {
+        val SOURCE_VARIANT_SUFFIX_PATTERN = Regex("[-_](?:usr|step)(?:[-_].*)?$", RegexOption.IGNORE_CASE)
         val QCOM_CORE_PATTERN = Regex("^cpu-([0-1])-([0-3])-(?:usr|step)(?:[-_].*)?$")
         val GENERIC_CORE_PATTERNS = listOf(
             Regex("^cpu([0-7])(?:$|[-_].*)"),
@@ -243,10 +236,11 @@ class SensorReader {
 
 
 object SensorSourceLabels {
-    private val sourceSuffix = Regex("[-_](usr|step)$", RegexOption.IGNORE_CASE)
+    private val sourceSuffix = Regex("[-_](usr|step)(?:[-_].*)?$", RegexOption.IGNORE_CASE)
+    private val sourceVariantPattern = Regex("(?:^|[-_])(usr|step)(?:$|[-_])", RegexOption.IGNORE_CASE)
     private val qcomCpu = Regex("^cpu-([0-1])-([0-3])-(usr|step)(?:$|[-_].*)$")
     private val genericCpu = Regex("^cpu(?:[-_]core)?[-_]?([0-7])[-_](usr|step)(?:$|[-_].*)$")
-    private val indexedGpu = Regex("^(?:gpuss|gpu)[-_]?([0-9]+)-(usr|step)(?:$|[-_].*)$")
+    private val indexedGpu = Regex("^(?:gpuss|gpu)[-_]?([0-9]+)[-_](usr|step)(?:$|[-_].*)$")
     private val numberedGpu = Regex("^(?:gpuss|gpu)[-_]?([0-9]+)(?:$|[-_].*)$")
 
     fun cpuCoreOption(reading: ThermalReading): String? {
@@ -274,11 +268,10 @@ object SensorSourceLabels {
         return "GPU sensor · ${reading.id}"
     }
 
-    fun sourceVariant(reading: ThermalReading): String? = when {
-        reading.label.lowercase(Locale.US).endsWith("-usr") -> "usr"
-        reading.label.lowercase(Locale.US).endsWith("-step") -> "step"
-        else -> null
-    }
+    fun sourceVariant(reading: ThermalReading): String? = sourceVariant(reading.label)
+
+    fun sourceVariant(label: String): String? =
+        sourceVariantPattern.find(label)?.groupValues?.getOrNull(1)?.lowercase(Locale.US)
 
     fun overlayLabel(reading: ThermalReading): String {
         val base = (cpuCoreOption(reading) ?: gpuSourceOption(reading)
