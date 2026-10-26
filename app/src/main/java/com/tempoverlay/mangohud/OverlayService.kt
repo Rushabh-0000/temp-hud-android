@@ -59,13 +59,24 @@ class OverlayService : Service() {
         override fun run() {
             val target = hudView ?: return
             val handler = pollingHandler ?: return
+            if (!pollingStarted) return
+
             val startedAt = SystemClock.uptimeMillis()
             val sampleConfig = HudConfig.load(this@OverlayService)
-            val snapshot = sensorReader.sample(sampleConfig, includeAllForSettings = catalogRequested)
-            // A settings change may land while sysfs is being read. Never let a stale
-            // pre-read config re-apply an old lock/position after the user has locked the HUD.
+            val snapshot = try {
+                sensorReader.sample(sampleConfig, includeAllForSettings = catalogRequested)
+            } catch (_: Exception) {
+                // One unreadable sysfs zone must not kill the entire polling loop.
+                TemperatureSnapshot()
+            }
+
+            // Teardown can race a sysfs read; do not publish or queue more work after stop.
+            if (!pollingStarted || hudView !== target || pollingHandler !== handler) return
+
             target.post {
-                if (hudView === target) target.update(HudConfig.load(this@OverlayService), snapshot)
+                if (pollingStarted && hudView === target) {
+                    target.update(HudConfig.load(this@OverlayService), snapshot)
+                }
             }
             if (snapshotListenerActive) {
                 sendBroadcast(
@@ -77,9 +88,10 @@ class OverlayService : Service() {
             }
 
             val elapsedMs = SystemClock.uptimeMillis() - startedAt
-            // Start-to-start timing avoids adding read duration to the selected interval.
-            // Keep a small floor if thermal reads overrun, preventing a busy loop.
-            handler.postDelayed(this, (sampleConfig.refreshMs.toLong() - elapsedMs).coerceAtLeast(100L))
+            // Bounded start-to-start polling avoids busy loops; sysfs reads stay off main.
+            if (pollingStarted && hudView === target && pollingHandler === handler) {
+                handler.postDelayed(this, (sampleConfig.refreshMs.toLong() - elapsedMs).coerceAtLeast(250L))
+            }
         }
     }
 
@@ -195,12 +207,21 @@ class OverlayService : Service() {
         return START_NOT_STICKY
     }
 
-    override fun onDestroy() {
+    private fun stopPollingLoop() {
         pollingStarted = false
         pollingHandler?.removeCallbacksAndMessages(null)
+        pollingHandler = null
         pollingThread?.quitSafely()
+        pollingThread = null
+    }
+
+    override fun onDestroy() {
+        // Stop first, so a read already in progress cannot schedule another tick.
+        stopPollingLoop()
         try { hudView?.let { windowManager?.removeView(it) } } catch (_: Exception) { }
         hudView = null
+        hudWindowParams = null
+        windowManager = null
         HudConfig.setRunning(false)
         super.onDestroy()
     }
@@ -208,23 +229,29 @@ class OverlayService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun rows(config: HudConfig, snapshot: TemperatureSnapshot): List<OverlayRow> = buildList {
+        // Combined CPU/GPU summaries are the first lines on the HUD.
         if (config.showCpuTemp) add(OverlayRow("CPU", snapshot.cpuOverall))
         if (config.showGpuTemp) add(OverlayRow("GPU", snapshot.gpuOverall))
+
+        add(OverlayRow("CPU Eco Cluster", snapshot.cpuEcoCluster))
+        add(OverlayRow("CPU Perf Cluster", snapshot.cpuPerfCluster))
+        snapshot.cpuCores.forEachIndexed { index, reading ->
+            add(OverlayRow("CPU-$index", reading))
+        }
+        add(OverlayRow("GPU Sensor 1", snapshot.gpuSensor1))
+        add(OverlayRow("GPU Sensor 2", snapshot.gpuSensor2))
+
+        val builtInIds = snapshot.allSensors.filter { reading ->
+            val type = reading.label.lowercase(Locale.US)
+            type == "cpuss-0-usr" || type == "cpuss-1-usr" ||
+                type == "gpuss-0-usr" || type == "gpuss-1-usr" ||
+                Regex("^cpu-[0-7]-usr$").matches(type)
+        }.mapTo(HashSet()) { it.id }
         val selectedGroups = snapshot.allSensors
-            .filter { config.selectedThermalSensors.contains(it.id) }
+            .filter { config.selectedThermalSensors.contains(it.id) && it.id !in builtInIds }
             .groupBy { SensorSourceLabels.overlayLabel(it) }
         selectedGroups.values.forEach { candidates ->
-            // Keep the HUD compact if both variants are checked for the same source:
-            // usr wins deterministically; step is shown when usr is not selected.
-            val chosen = candidates.minWithOrNull(
-                compareBy<ThermalReading> {
-                    when (SensorSourceLabels.sourceVariant(it)) {
-                        "usr" -> 0
-                        "step" -> 1
-                        else -> 2
-                    }
-                }.thenBy { it.id.removePrefix("thermal_zone").toIntOrNull() ?: Int.MAX_VALUE }
-            ) ?: return@forEach
+            val chosen = candidates.firstOrNull() ?: return@forEach
             add(OverlayRow(SensorSourceLabels.overlayLabel(chosen), chosen))
         }
         config.customEntries.forEach { custom ->

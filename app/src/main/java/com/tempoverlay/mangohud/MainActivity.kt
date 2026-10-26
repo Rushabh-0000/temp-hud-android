@@ -514,7 +514,7 @@ class MainActivity : Activity() {
                     bottomMargin = dp(5)
                 })
             tile.addView(CheckBox(this).apply {
-                text = "Show on HUD"
+                text = if (key == "cpuTemp") "Show total CPU" else "Show total GPU"
                 textSize = 10f
                 setTextColor(Ui.MUTED)
                 buttonTintList = ColorStateList.valueOf(accent)
@@ -543,7 +543,7 @@ class MainActivity : Activity() {
                 pageHeading(
                     "SENSOR LIBRARY",
                     "Choose your readings",
-                    "Build the data set that appears in your floating overlay."
+                    "Only -usr zones are listed. -step zones are ignored."
                 )
 
                 val selectedCount = config.selectedThermalSensors.size +

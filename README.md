@@ -1,6 +1,6 @@
 # Temp HUD
 
-Current development version: **0.7.14**.
+Current development version: **0.7.15**.
 
 Compact MangoHud-inspired Android temperature overlay for Android 11+, written in Kotlin using Android's built-in Material-themed Views to keep the APK lean.
 
@@ -23,6 +23,12 @@ Compact MangoHud-inspired Android temperature overlay for Android 11+, written i
 - Sensors has its own library for CPU core variants, GPU sources, full sensor search, and custom rows.
 - Appearance has a live reading preview plus separate visual and position controls, including position lock.
 - Preserved existing sensor sampling and foreground overlay service; kept the UI built with native Android Views to avoid adding a large UI toolkit dependency.
+
+## Thermal source routing (0.7.15)
+- Reads zone source names from /sys/class/thermal/thermal_zone*/type and samples only names ending in -usr; -step and other variants are excluded.
+- Converts raw millidegree values to Celsius using raw / 1000.0.
+- CPU summary averages cpuss-0-usr and cpuss-1-usr. GPU summary averages gpuss-0-usr and gpuss-1-usr. Missing exact zones fall back to the closest readable CPU/GPU -usr values.
+- Sampling runs on a low-priority HandlerThread with a bounded interval. Service teardown clears queued callbacks and quits the worker. Polling uses some power while active; zero battery drain is not possible for a live monitor.
 
 ## Low-memory background mode
 - The overlay service uses a background-priority sensor thread in the app's single process. Leaving the app finishes/removes the settings Activity task and releases its view tree while the foreground service remains. This avoids the extra ART/runtime overhead from running a second app process.
