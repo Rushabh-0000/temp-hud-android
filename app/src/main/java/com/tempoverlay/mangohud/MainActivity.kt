@@ -44,6 +44,7 @@ private object Ui {
     const val WHITE = 0xFFF0F4F8.toInt()
     const val MUTED = 0xFF8D9BAA.toInt()
     const val EDGE = 0xFF293643.toInt()
+    const val RED = 0xFFFF8888.toInt()
 }
 private val SOURCE_INDEX_PATTERN = Regex("(?:CPU|GPU) (\\d+)")
 private data class SourceOption(val reading: ThermalReading, val name: String, val variant: String)
