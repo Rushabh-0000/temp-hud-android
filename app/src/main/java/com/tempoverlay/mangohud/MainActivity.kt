@@ -322,7 +322,7 @@ class MainActivity : Activity() {
             val enable = !isMetricActive(key)
             saveConfig(config.withMetric(key, enable), requestPermission = enable)
         }
-        styleTile(tile, isMetricActive(key))
+        styleTile(tile, isMetricActive(key), readingForMetric(key))
         updateTileValue(key, tile)
         return tile
     }
