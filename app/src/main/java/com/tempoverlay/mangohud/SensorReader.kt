@@ -262,7 +262,15 @@ object SensorSourceLabels {
         return "GPU sensor · ${reading.id}"
     }
 
-    fun overlayLabel(reading: ThermalReading): String =
-        (cpuCoreOption(reading) ?: gpuSourceOption(reading)
+    fun sourceVariant(reading: ThermalReading): String? = when {
+        reading.label.lowercase(Locale.US).endsWith("-usr") -> "usr"
+        reading.label.lowercase(Locale.US).endsWith("-step") -> "step"
+        else -> null
+    }
+
+    fun overlayLabel(reading: ThermalReading): String {
+        val base = (cpuCoreOption(reading) ?: gpuSourceOption(reading)
             ?: reading.label.uppercase(Locale.US)).substringBefore(" · ")
+        return base.replace(Regex("[-_](usr|step)$", RegexOption.IGNORE_CASE), "")
+    }
 }

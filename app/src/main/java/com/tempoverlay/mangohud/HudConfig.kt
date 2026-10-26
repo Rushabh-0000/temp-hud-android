@@ -199,6 +199,8 @@ data class HudConfig(
                 .put("backgroundOpacity", config.backgroundOpacity.coerceIn(0, 65))
                 .put("scalePercent", config.scalePercent.coerceIn(70, 115))
                 .put("textBrightness", config.textBrightness.coerceIn(35, 100))
+                .put("cpuAverageVariant", config.cpuAverageVariant.normalizedVariant())
+                .put("gpuAverageVariant", config.gpuAverageVariant.normalizedVariant())
                 .put("lockPosition", config.lockPosition)
                 .put("positionXDp", config.positionXDp.coerceAtLeast(0))
                 .put("positionYDp", config.positionYDp.coerceAtLeast(0))

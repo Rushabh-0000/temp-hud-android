@@ -32,6 +32,8 @@ class OverlayService : Service() {
         const val ACTION_START = "com.tempoverlay.mangohud.START"
         const val ACTION_SNAPSHOT = "com.tempoverlay.mangohud.SNAPSHOT"
         const val EXTRA_SNAPSHOT = "snapshot_json"
+        const val ACTION_CATALOG = "com.tempoverlay.mangohud.CATALOG"
+        const val EXTRA_CATALOG = "catalog_requested"
         private const val CHANNEL = "temp_hud_monitor"
         private const val NOTIFICATION_ID = 101
         private const val ROW_HEIGHT_DP = 15.5f
@@ -46,6 +48,7 @@ class OverlayService : Service() {
     private var pollingThread: HandlerThread? = null
     private var pollingHandler: Handler? = null
     private val sensorReader = SensorReader()
+    @Volatile private var catalogRequested = false
 
     private val ticker = object : Runnable {
         override fun run() {
@@ -53,7 +56,7 @@ class OverlayService : Service() {
             val handler = pollingHandler ?: return
             val startedAt = SystemClock.uptimeMillis()
             val config = HudConfig.load(this@OverlayService)
-            val snapshot = sensorReader.sample(config)
+            val snapshot = sensorReader.sample(config, includeAllForSettings = catalogRequested)
             target.post { if (hudView === target) target.update(config, snapshot) }
             sendBroadcast(
                 Intent(ACTION_SNAPSHOT)
@@ -152,8 +155,12 @@ class OverlayService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // Force a prompt background poll after Apply/Start. Never read thermal files
-        // synchronously from the service's main thread.
+        if (intent?.action == ACTION_CATALOG) {
+            // Broaden/narrow the next scheduled scan without triggering a second sample.
+            catalogRequested = intent.getBooleanExtra(EXTRA_CATALOG, false)
+            return START_NOT_STICKY
+        }
+        // Explicit Start/Apply replaces the pending callback instead of making a second loop.
         pollingHandler?.removeCallbacks(ticker)
         pollingHandler?.post(ticker)
         return START_NOT_STICKY
@@ -173,10 +180,6 @@ class OverlayService : Service() {
     private fun rows(config: HudConfig, snapshot: TemperatureSnapshot): List<OverlayRow> = buildList {
         if (config.showCpuTemp) add(OverlayRow("CPU", snapshot.cpuOverall))
         if (config.showGpuTemp) add(OverlayRow("GPU", snapshot.gpuOverall))
-        for (core in 0..7) {
-            val key = "core${core}Temp"
-            if (config.isEnabled(key)) add(OverlayRow("CPU $core", snapshot.cpuCores.getOrNull(core)))
-        }
         snapshot.allSensors.filter { config.selectedThermalSensors.contains(it.id) }
             .forEach { add(OverlayRow(SensorSourceLabels.overlayLabel(it), it)) }
         config.customEntries.forEach { custom ->
