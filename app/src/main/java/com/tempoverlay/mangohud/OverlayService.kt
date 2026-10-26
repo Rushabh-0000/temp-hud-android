@@ -34,6 +34,7 @@ class OverlayService : Service() {
         const val EXTRA_SNAPSHOT = "snapshot_json"
         const val ACTION_CATALOG = "com.tempoverlay.mangohud.CATALOG"
         const val EXTRA_CATALOG = "catalog_requested"
+        const val EXTRA_CATALOG_COMPLETE = "catalog_complete"
         private const val CHANNEL = "temp_hud_monitor"
         private const val NOTIFICATION_ID = 101
         private const val ROW_HEIGHT_DP = 15.5f
@@ -63,6 +64,7 @@ class OverlayService : Service() {
                 Intent(ACTION_SNAPSHOT)
                     .setPackage(packageName)
                     .putExtra(EXTRA_SNAPSHOT, snapshot.toJson())
+                    .putExtra(EXTRA_CATALOG_COMPLETE, catalogRequested)
             )
 
             val elapsedMs = SystemClock.uptimeMillis() - startedAt
@@ -158,7 +160,7 @@ class OverlayService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_CATALOG) {
-            // Broaden/narrow the next scheduled scan without triggering a second sample.
+            // One existing ticker performs the catalog scan at the next selected interval.
             catalogRequested = intent.getBooleanExtra(EXTRA_CATALOG, false)
             return START_NOT_STICKY
         }
@@ -228,9 +230,11 @@ class OverlayService : Service() {
                 var needUpdate = layoutChanged || positionChanged || touchChanged
                 params.width = WindowManager.LayoutParams.WRAP_CONTENT
                 params.height = WindowManager.LayoutParams.WRAP_CONTENT
+                // Keep the visual opacity identical for locked and unlocked states.
+                params.alpha = 1f
+                this.alpha = 1f
                 if (touchChanged) {
                     params.flags = makeFlags(nextConfig.lockPosition)
-                    params.alpha = 1f
                 }
                 if (positionChanged) {
                     params.x = dp(nextConfig.positionXDp.toFloat()).coerceIn(0, maxX())
@@ -251,6 +255,7 @@ class OverlayService : Service() {
 
         private fun configureTextPaint(size: Float) {
             textPaint.textSize = u(size).toFloat()
+            textPaint.alpha = 255
             textPaint.typeface = Typeface.create("monospace", Typeface.BOLD)
         }
 

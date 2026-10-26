@@ -24,7 +24,6 @@
         </activity>
         <service
             android:name=".OverlayService"
-            android:process=":overlay"
             android:exported="false"
             android:foregroundServiceType="specialUse">
             <property

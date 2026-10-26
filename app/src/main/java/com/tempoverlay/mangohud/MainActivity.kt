@@ -67,6 +67,8 @@ class MainActivity : Activity() {
     @Volatile private var showCustomEditor = false
     private var showDisplaySettings = false
     private var searchText = ""
+    private var fullCatalogLoaded = false
+    private val sensorSearchRows = mutableListOf<Pair<View, String>>()
     private val valueViews = linkedMapOf<String, TextView>()
 
     private val snapshotReceiver = object : BroadcastReceiver() {
@@ -74,12 +76,18 @@ class MainActivity : Activity() {
             if (intent.action != OverlayService.ACTION_SNAPSHOT) return
             val raw = intent.getStringExtra(OverlayService.EXTRA_SNAPSHOT) ?: return
             val fresh = TemperatureSnapshot.fromJson(raw) ?: return
-            val previousIds = snapshotSignature(snapshot)
+            val previousCatalogIds = snapshotSignature(catalogSnapshot)
             snapshot = fresh
-            catalogSnapshot = if (needsCatalog()) fresh else TemperatureSnapshot()
+            val catalogComplete = intent.getBooleanExtra(OverlayService.EXTRA_CATALOG_COMPLETE, false)
+            catalogSnapshot = if (needsCatalog() && catalogComplete) fresh else if (needsCatalog()) fresh else TemperatureSnapshot()
+            fullCatalogLoaded = needsCatalog() && catalogComplete
             statusView?.text = "RUNNING"
             statusView?.setTextColor(Ui.MINT)
-            if (needsCatalog() && previousIds != snapshotSignature(fresh)) rebuildKeepingScroll() else updateValues()
+            if (needsCatalog() && previousCatalogIds != snapshotSignature(catalogSnapshot)) {
+                rebuildKeepingScroll()
+            } else {
+                updateValues()
+            }
         }
     }
 
@@ -90,13 +98,14 @@ class MainActivity : Activity() {
             val start = SystemClock.uptimeMillis()
             val cfg = config
             val fullScan = needsCatalog()
-            val previousIds = snapshotSignature(snapshot)
+            val previousCatalogIds = snapshotSignature(catalogSnapshot)
             val fresh = reader.sample(cfg, includeAllForSettings = fullScan)
             uiHandler.post {
                 if (screenActive && !HudConfig.isRunning(this@MainActivity)) {
                     snapshot = fresh
                     catalogSnapshot = if (fullScan) fresh else TemperatureSnapshot()
-                    if (fullScan && previousIds != snapshotSignature(fresh)) rebuildKeepingScroll() else updateValues()
+                    fullCatalogLoaded = fullScan
+                    if (fullScan && previousCatalogIds != snapshotSignature(catalogSnapshot)) rebuildKeepingScroll() else updateValues()
                 }
             }
             val elapsed = SystemClock.uptimeMillis() - start
@@ -173,12 +182,15 @@ class MainActivity : Activity() {
         samplingThread = HandlerThread("TempHudSettings", Process.THREAD_PRIORITY_BACKGROUND).also { it.start() }
         samplingHandler = Handler(samplingThread!!.looper)
         samplingHandler?.post {
-            val first = reader.sample(config, includeAllForSettings = needsCatalog())
+            val fullScan = needsCatalog()
+            val previousCatalogIds = snapshotSignature(catalogSnapshot)
+            val first = reader.sample(config, includeAllForSettings = fullScan)
             uiHandler.post {
                 if (!screenActive || HudConfig.isRunning(this)) return@post
                 snapshot = first
                 catalogSnapshot = first
-                updateValues()
+                fullCatalogLoaded = fullScan
+                if (fullScan && previousCatalogIds != snapshotSignature(first)) rebuildKeepingScroll() else updateValues()
                 samplingHandler?.removeCallbacks(poller)
                 samplingHandler?.postDelayed(poller, config.refreshMs.toLong())
             }
@@ -200,20 +212,51 @@ class MainActivity : Activity() {
     }
 
     private fun requestCatalogMode(enabled: Boolean) {
-        if (!HudConfig.isRunning(this)) return
+        if (!HudConfig.isRunning(this)) {
+            if (enabled) scanCatalogLocally() else fullCatalogLoaded = false
+            return
+        }
         try {
             startService(
                 Intent(this, OverlayService::class.java)
                     .setAction(OverlayService.ACTION_CATALOG)
                     .putExtra(OverlayService.EXTRA_CATALOG, enabled)
             )
+            if (enabled) statusLine?.text = "Loading readable thermal sensors…"
+            else fullCatalogLoaded = false
         } catch (_: Exception) { }
     }
 
     private fun scanCatalog() {
-        // No extra reader thread: the current sampler broadens its next scheduled sample.
+        searchText = ""
         requestCatalogMode(true)
         rebuildKeepingScroll()
+    }
+
+    private fun scanCatalogLocally() {
+        if (!screenActive || HudConfig.isRunning(this)) return
+        val handler = samplingHandler
+        if (handler == null) {
+            startSampler()
+            return
+        }
+        val previousCatalogIds = snapshotSignature(catalogSnapshot)
+        statusLine?.text = "Scanning all readable thermal sensors…"
+        handler.removeCallbacks(poller)
+        handler.post {
+            if (!screenActive || HudConfig.isRunning(this)) return@post
+            val fresh = reader.sample(config, includeAllForSettings = true)
+            handler.removeCallbacks(poller)
+            uiHandler.post {
+                if (!screenActive || HudConfig.isRunning(this)) return@post
+                snapshot = fresh
+                catalogSnapshot = fresh
+                fullCatalogLoaded = true
+                if (previousCatalogIds != snapshotSignature(fresh)) rebuildKeepingScroll() else updateValues()
+                statusLine?.text = "Found ${fresh.allSensors.size} readable sensors."
+            }
+            handler.postDelayed(poller, config.refreshMs.toLong())
+        }
     }
 
     private fun save(next: HudConfig) {
@@ -254,13 +297,25 @@ class MainActivity : Activity() {
 
     private fun renderUi() {
         valueViews.clear()
-        val scroll = ScrollView(this).apply { setBackgroundColor(Ui.BG); clipToPadding = false; isFillViewport = true }
+        sensorSearchRows.clear()
+        val scroll = ScrollView(this).apply {
+            setBackgroundColor(Ui.BG)
+            clipToPadding = false
+            clipChildren = false
+            isFillViewport = false
+            isVerticalScrollBarEnabled = true
+        }
         val column = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14), dp(10), dp(14), dp(18))
             setBackgroundColor(Ui.BG)
         }
-        scroll.addView(column, android.widget.FrameLayout.LayoutParams(-1, -2))
+        column.minimumHeight = 0
+        column.clipChildren = false
+        scroll.addView(column, ScrollView.LayoutParams(
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+            android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
         scrollView = scroll
         setContentView(scroll)
 
@@ -326,8 +381,8 @@ class MainActivity : Activity() {
 
         column.addView(divider(), dividerParams(top = 7, bottom = 7))
         val refreshCard = card()
-        addSlider(refreshCard, "Refresh interval", config.refreshMs, 500, 5000, 50,
-            "0.50 s", "5.00 s", { String.format(Locale.US, "%.2f s", it / 1000f) }) {
+        addSlider(refreshCard, "Refresh interval", config.refreshMs, 500, 3000, 10,
+            "0.50 s", "3.00 s", { String.format(Locale.US, "%.2f s", it / 1000f) }) {
             save(config.copy(refreshMs = it))
             restartSamplerForNewInterval()
         }
@@ -482,13 +537,22 @@ class MainActivity : Activity() {
             hint = "Search sensor type"
             setTextColor(Ui.WHITE); setHintTextColor(Ui.MUTED); textSize = 13f; setSingleLine(true)
             setText(searchText); setPadding(dp(10), dp(3), dp(10), dp(3)); background = rounded(Ui.PANEL, Ui.EDGE, 10)
-            addTextChangedListener(SimpleTextWatcher { searchText = it })
+            addTextChangedListener(SimpleTextWatcher {
+                searchText = it
+                filterSensorSearchRows()
+            })
         }
         parent.addView(search, matchWrap(bottom = 6))
-        val readings = allSourceReadings().filter {
-            "${it.label} ${it.id} ${it.sourceName}".contains(searchText, ignoreCase = true)
+        if (!fullCatalogLoaded) {
+            parent.addView(label("Loading every readable sensor on the next poll…", 10f, Ui.MUTED, false)
+                .apply { setPadding(dp(6), dp(4), dp(6), dp(4)) }, matchWrap())
+            parent.addView(button("Scan all thermal sensors", true).apply {
+                setOnClickListener { scanCatalog() }
+            }, matchWrap(bottom = 6))
         }
+        val readings = allSourceReadings()
         readings.forEach { reading ->
+            val item = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
             val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(6), dp(2), dp(6), dp(2)) }
             row.addView(label("${SensorSourceLabels.overlayLabel(reading)} · ${reading.id}", 11f, Ui.WHITE, false),
                 LinearLayout.LayoutParams(0, -2, 1f))
@@ -497,16 +561,30 @@ class MainActivity : Activity() {
                 isChecked = config.selectedThermalSensors.contains(reading.id)
                 setOnCheckedChangeListener { _, enabled -> save(config.withMetric(HudConfig.SENSOR_PREFIX + reading.id, enabled)) }
             })
-            parent.addView(row, matchWrap())
+            item.addView(row, matchWrap())
             val value = label(temp(reading), 10f, Ui.MUTED, false)
             valueViews[HudConfig.SENSOR_PREFIX + reading.id] = value
-            parent.addView(value, matchWrap(start = 7, bottom = 3))
+            item.addView(value, matchWrap(start = 7, bottom = 3))
+            parent.addView(item, matchWrap(bottom = 3))
+            sensorSearchRows += item to "${reading.label} ${reading.id} ${reading.sourceName} ${SensorSourceLabels.overlayLabel(reading)}"
         }
-        if (readings.isEmpty()) parent.addView(button("Scan sensors", true).apply { setOnClickListener { scanCatalog() } }, matchWrap())
+        filterSensorSearchRows()
+    }
+
+    private fun filterSensorSearchRows() {
+        val query = searchText.trim()
+        sensorSearchRows.forEach { (row, haystack) ->
+            row.visibility = if (query.isEmpty() || haystack.contains(query, ignoreCase = true)) View.VISIBLE else View.GONE
+        }
     }
 
     private fun buildCustomRows(parent: LinearLayout) {
         val available = allSourceReadings()
+        if (!fullCatalogLoaded) {
+            parent.addView(button("Load all thermal sensors", true).apply {
+                setOnClickListener { scanCatalog() }
+            }, matchWrap(bottom = 6))
+        }
         if (available.isEmpty()) {
             parent.addView(button("Scan all thermal sensors", true).apply { setOnClickListener { scanCatalog() } }, matchWrap())
         } else {

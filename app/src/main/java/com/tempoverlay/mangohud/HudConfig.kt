@@ -59,7 +59,7 @@ data class HudConfig(
             .putBoolean("cpu7_temp", showCore7Temp)
             .putStringSet("selected_thermal_sensors", HashSet(selectedThermalSensors))
             .putString("custom_entries_json", entriesJson.toString())
-            .putInt("refresh_ms", refreshMs.coerceIn(500, 5000))
+            .putInt("refresh_ms", refreshMs.coerceIn(500, 3000))
             .putInt("transparency", backgroundOpacity.coerceIn(0, 65))
             .putInt("scale_percent", scalePercent.coerceIn(70, 115))
             .putInt("text_brightness", textBrightness.coerceIn(35, 100))
@@ -146,7 +146,7 @@ data class HudConfig(
                 showCore7Temp = p.getBoolean("cpu7_temp", false),
                 selectedThermalSensors = selected,
                 customEntries = entries,
-                refreshMs = p.getInt("refresh_ms", 1500).coerceIn(500, 5000),
+                refreshMs = p.getInt("refresh_ms", 1500).coerceIn(500, 3000),
                 backgroundOpacity = p.getInt("transparency", 0).coerceIn(0, 65),
                 scalePercent = p.getInt("scale_percent", 100).coerceIn(70, 115),
                 textBrightness = p.getInt("text_brightness", 100).coerceIn(35, 100),
@@ -195,7 +195,7 @@ data class HudConfig(
                 .put("showCore7Temp", config.showCore7Temp)
                 .put("selectedThermalSensors", selected)
                 .put("customEntries", entries)
-                .put("refreshMs", config.refreshMs.coerceIn(500, 5000))
+                .put("refreshMs", config.refreshMs.coerceIn(500, 3000))
                 .put("backgroundOpacity", config.backgroundOpacity.coerceIn(0, 65))
                 .put("scalePercent", config.scalePercent.coerceIn(70, 115))
                 .put("textBrightness", config.textBrightness.coerceIn(35, 100))
@@ -245,7 +245,7 @@ data class HudConfig(
                             showCore7Temp = json.optBoolean("showCore7Temp", false),
                             selectedThermalSensors = selected,
                             customEntries = entries,
-                            refreshMs = json.optInt("refreshMs", 1500).coerceIn(500, 5000),
+                            refreshMs = json.optInt("refreshMs", 1500).coerceIn(500, 3000),
                             backgroundOpacity = json.optInt("backgroundOpacity", 0).coerceIn(0, 65),
                             scalePercent = json.optInt("scalePercent", 100).coerceIn(70, 115),
                             textBrightness = json.optInt("textBrightness", 100).coerceIn(35, 100),
