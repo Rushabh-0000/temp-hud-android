@@ -85,6 +85,7 @@ data class TemperatureSnapshot(
                 null
             }
         }
+    }
 }
 
 class SensorReader {
