@@ -39,7 +39,7 @@ jobs:
       ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
       ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
       PUBLISH_RELEASE: ${{ (github.event_name == 'workflow_dispatch' && inputs.publish_release) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[release]')) }}
-      RELEASE_BUMP: ${{ (github.event_name == 'push' && contains(github.event.head_commit.message, '[release]') && 'minor') || inputs.bump || 'patch' }}
+      RELEASE_BUMP: ${{ (github.event_name == 'push' && contains(github.event.head_commit.message, '[release]') && 'patch') || inputs.bump || 'patch' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
