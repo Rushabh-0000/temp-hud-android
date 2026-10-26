@@ -350,7 +350,7 @@ class OverlayService : Service() {
                 val x = u(HORIZONTAL_PADDING_DP).toFloat()
                 val valueX = x + textPaint.measureText(row.label) + u(VALUE_GAP_DP)
                 val valueColor = row.reading?.celsius?.let { HudPalette.heatColor(it, config.textBrightness) }
-                    ?: Color.argb((config.textBrightness * 175 / 100).coerceIn(50, 175), 205, 212, 222)
+                    ?: Color.argb((config.textBrightness * 175 / 100).coerceIn(50, 255), 205, 212, 222)
                 drawLegibleText(canvas, row.label, x, baseline, labelColor)
                 drawLegibleText(canvas, valueText(row), valueX, baseline, valueColor)
             }

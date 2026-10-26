@@ -36,7 +36,7 @@ data class HudConfig(
             refreshMs = refreshMs.coerceIn(500, 3000),
             backgroundOpacity = backgroundOpacity.coerceIn(0, 65),
             scalePercent = scalePercent.coerceIn(70, 115),
-            textBrightness = textBrightness.coerceIn(35, 100),
+            textBrightness = textBrightness.coerceIn(35, 150),
             cpuAverageVariant = cpuAverageVariant.normalizedVariant(),
             gpuAverageVariant = gpuAverageVariant.normalizedVariant(),
             positionXDp = positionXDp.coerceAtLeast(0),
@@ -111,7 +111,7 @@ data class HudConfig(
                         refreshMs = p.getInt("refresh_ms", 1500).coerceIn(500, 3000),
                         backgroundOpacity = p.getInt("transparency", 0).coerceIn(0, 65),
                         scalePercent = p.getInt("scale_percent", 100).coerceIn(70, 115),
-                        textBrightness = p.getInt("text_brightness", 100).coerceIn(35, 100),
+                        textBrightness = p.getInt("text_brightness", 100).coerceIn(35, 150),
                         cpuAverageVariant = (p.getString("cpu_average_variant", "usr") ?: "usr").normalizedVariant(),
                         gpuAverageVariant = (p.getString("gpu_average_variant", "usr") ?: "usr").normalizedVariant(),
                         lockPosition = p.getBoolean("lock_position", false),
@@ -181,7 +181,7 @@ object HudPalette {
     }
 
     private fun applyBrightness(color: Int, brightness: Int): Int {
-        val percent = brightness.coerceIn(35, 100) / 100f
+        val percent = brightness.coerceIn(35, 150) / 100f
         // 100% slider brightness maps to 150% color gain; output channels are clamped.
         val gain = 0.5f + percent
         return android.graphics.Color.argb(

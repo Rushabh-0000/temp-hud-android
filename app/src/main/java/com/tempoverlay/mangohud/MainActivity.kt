@@ -572,7 +572,7 @@ class MainActivity : Activity() {
         addSettingSlider(box, "Scale", config.scalePercent, 70, 115, 1, { "${it}%" }) {
             saveConfig(config.copy(scalePercent = it))
         }
-        addSettingSlider(box, "Text brightness", config.textBrightness, 35, 100, 1, { "${it}%" }) {
+        addSettingSlider(box, "Text brightness", config.textBrightness, 35, 150, 1, { "${it}%" }) {
             saveConfig(config.copy(textBrightness = it))
         }
         addSettingSlider(box, "Background opacity", config.backgroundOpacity, 0, 65, 1, { "${it}%" }) {
