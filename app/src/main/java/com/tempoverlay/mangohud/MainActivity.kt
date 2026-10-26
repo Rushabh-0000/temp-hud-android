@@ -137,8 +137,9 @@ class MainActivity : Activity() {
         config = HudConfig.load(this)
         OverlayService.setSnapshotListenerActive(receiverRegistered)
         if (HudConfig.isRunning()) {
+            // Resume only the live overlay state. The full sensor catalogue is opt-in
+            // through All sensors expansion or either explicit picker Refresh button.
             stopSampler()
-            requestCatalogMode(true)
         } else {
             startSampler()
         }
