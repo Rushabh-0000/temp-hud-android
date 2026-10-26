@@ -785,7 +785,7 @@ class MainActivity : Activity() {
 
     private fun updateLiveValues() {
         tileWidgets.forEach { (key, tile) ->
-            styleTile(tile, isMetricActive(key))
+            styleTile(tile, isMetricActive(key), readingForMetric(key))
             updateTileValue(key, tile)
         }
         updateSensorRows()
@@ -801,13 +801,19 @@ class MainActivity : Activity() {
         tile.source.setTextColor(if (reading == null) V2Colors.MUTED else 0xFFADB6BD.toInt())
     }
 
-    private fun styleTile(tile: MetricTile, active: Boolean) {
-        tile.card.background = rounded(
-            if (active) V2Colors.CARD_ACTIVE else V2Colors.CARD,
-            if (active) V2Colors.GREEN else V2Colors.EDGE,
-            if (active) 2 else 1,
-            13
-        )
+    private fun styleTile(tile: MetricTile, active: Boolean, reading: ThermalReading?) {
+        val temperature = reading?.celsius
+        val heat = temperature
+            ?.takeIf { HudPalette.isHeatColored(it) }
+            ?.let { HudPalette.heatColor(it, 100) }
+        val heatTinted = heat?.let { mixColor(V2Colors.CARD, it, 0.15f) } ?: V2Colors.CARD
+        val fill = if (active) mixColor(heatTinted, V2Colors.GREEN, 0.10f) else heatTinted
+        val stroke = when {
+            active -> V2Colors.GREEN
+            heat != null -> mixColor(V2Colors.EDGE, heat, 0.55f)
+            else -> V2Colors.EDGE
+        }
+        tile.card.background = rounded(fill, stroke, if (active) 2 else 1, 13)
         tile.card.elevation = dp(if (active) 6f else 0f).toFloat()
         tile.name.setTextColor(if (active) V2Colors.GREEN else V2Colors.MUTED)
         if (active) tile.name.setShadowLayer(dp(4f).toFloat(), 0f, 0f, V2Colors.GREEN_DARK)

@@ -11,6 +11,7 @@ The root app is a clean rebuild. Original Version 1 source and project files rem
 - All sensors uses a two-column grid of cards. Both card tint and temperature text remain neutral below about 80°C, then progress from yellow at 80°C to orange around 85°C and red at 90°C; the overlay uses the same threshold and palette. When expanded, every discovered sensor is polled live; collapsing the section stops the extra catalogue polling. Tap a card to toggle that source onto the overlay.
 - Pause overlay hides and stops the overlay without clearing selected rows; Resume restores the previous selection. The first install stays off until a row is selected.
 - Custom rows let a selected source be displayed under a user-defined name.
+- CPU/GPU/core tiles heat-tint their backgrounds at the same 80°C threshold as All sensors. Overlay text uses a 150%-strength glow at the default 100% brightness setting. Locking or unlocking preserves the exact visible overlay position; position sliders still move it intentionally.
 - Overlay settings are at the bottom: refresh interval, scale, text brightness, background opacity, position and lock.
 - Sensor reads run off the UI thread. The Activity sampler stops while hidden; the overlay sampler stops when the service is destroyed.
 

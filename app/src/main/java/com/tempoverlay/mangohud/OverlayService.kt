@@ -261,11 +261,12 @@ class OverlayService : Service() {
         fun update(nextConfig: HudConfig, nextSnapshot: TemperatureSnapshot) {
             val previous = config
             val params = hudWindowParams
-            val lockingNow = !previous.lockPosition && nextConfig.lockPosition
+            val touchChanged = previous.lockPosition != nextConfig.lockPosition
 
-            // Locking freezes the position currently visible on screen, not a possibly
-            // stale slider value from before the last drag. Persist that anchor once.
-            val effectiveConfig = if (lockingNow && params != null) {
+            // Lock and unlock both preserve the exact on-screen anchor. Only convert the
+            // current pixel coordinates to dp for persistence; do not re-apply rounded dp
+            // coordinates to WindowManager during the lock transition.
+            val effectiveConfig = if (touchChanged && params != null) {
                 nextConfig.copy(
                     positionXDp = pxToDp(params.x).coerceAtLeast(0),
                     positionYDp = pxToDp(params.y).coerceAtLeast(0)
@@ -280,7 +281,6 @@ class OverlayService : Service() {
                 previous.backgroundOpacity != effectiveConfig.backgroundOpacity
             val positionChanged = previous.positionXDp != effectiveConfig.positionXDp ||
                 previous.positionYDp != effectiveConfig.positionYDp
-            val touchChanged = previous.lockPosition != effectiveConfig.lockPosition
             config = effectiveConfig
             snapshot = nextSnapshot
             if (layoutChanged) requestLayout()
@@ -292,9 +292,9 @@ class OverlayService : Service() {
                 params.alpha = overlayWindowAlpha(effectiveConfig.lockPosition)
                 this.alpha = 1f
                 if (touchChanged) params.flags = makeFlags(effectiveConfig.lockPosition)
-                // When lock turns on, keep params.x/y exactly as they are. A deliberate
-                // position-slider change is still applied in later locked updates.
-                if (positionChanged && !lockingNow) {
+                // Lock/unlock must never reposition the window. Position sliders are
+                // applied only on a separate update where lock state did not change.
+                if (positionChanged && !touchChanged) {
                     params.x = dp(effectiveConfig.positionXDp.toFloat()).coerceIn(0, maxX())
                     params.y = maxOf(dp(effectiveConfig.positionYDp.toFloat()), safeTopPx() + dp(4f))
                 }
@@ -359,7 +359,19 @@ class OverlayService : Service() {
         private fun drawLegibleText(canvas: Canvas, text: String, x: Float, baseline: Float, color: Int) {
             configureTextPaint(10f)
             textPaint.color = color
+            // At the default 100% setting use a 150%-strength colored halo to make
+            // compact overlay text stand out without changing the user's slider value.
+            val glowAlpha = (config.textBrightness * 1.5f).toInt().coerceIn(0, 255)
+            val glow = Color.argb(
+                glowAlpha,
+                Color.red(color),
+                Color.green(color),
+                Color.blue(color)
+            )
+            val glowRadius = u(0.9f * config.textBrightness / 100f).toFloat()
+            textPaint.setShadowLayer(glowRadius, 0f, 0f, glow)
             canvas.drawText(text, x, baseline, textPaint)
+            textPaint.clearShadowLayer()
         }
 
         override fun onTouchEvent(event: MotionEvent): Boolean {

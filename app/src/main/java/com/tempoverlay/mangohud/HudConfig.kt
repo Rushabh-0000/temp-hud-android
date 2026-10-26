@@ -182,7 +182,8 @@ object HudPalette {
 
     private fun applyBrightness(color: Int, brightness: Int): Int {
         val percent = brightness.coerceIn(35, 100) / 100f
-        val gain = percent * (1.0f + 0.22f * percent)
+        // 100% slider brightness maps to 150% color gain; output channels are clamped.
+        val gain = 0.5f + percent
         return android.graphics.Color.argb(
             android.graphics.Color.alpha(color),
             (android.graphics.Color.red(color) * gain).toInt().coerceIn(0, 255),
