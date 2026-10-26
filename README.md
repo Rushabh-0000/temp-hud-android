@@ -21,7 +21,7 @@ Compact MangoHud-inspired Android temperature overlay for Android 11+, written i
 
 ## Appearance
 - Border-free, text-only HUD by default; no header or load/clock rows. White labels, heat-coloured values, adjustable text brightness, size, refresh interval, optional background opacity, saved position and touch-through lock.
-- Refresh interval ranges from 0.50–5.00 seconds in 0.05-second steps; default is 1.50 seconds. Changing it does not force an extra immediate sample.
+- Refresh interval ranges from 0.50–5.00 seconds in 0.05-second steps; default is 1.50 seconds. The service starts one ticker only and repeated Apply/Start commands do not enqueue duplicate sampling loops. Changing it does not force an extra immediate sample.
 - The overlay and settings screen use native Android Views; Compose and AndroidX UI dependencies are removed to keep the APK smaller.
 
 ## Privacy

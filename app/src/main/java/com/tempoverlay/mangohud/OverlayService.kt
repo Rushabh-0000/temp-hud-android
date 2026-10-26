@@ -49,6 +49,7 @@ class OverlayService : Service() {
     private var pollingHandler: Handler? = null
     private val sensorReader = SensorReader()
     @Volatile private var catalogRequested = false
+    @Volatile private var pollingStarted = false
 
     private val ticker = object : Runnable {
         override fun run() {
@@ -128,7 +129,8 @@ class OverlayService : Service() {
         // and settings data are loaded while it runs in the background.
         pollingThread = HandlerThread("TempHudThermalPoll", Process.THREAD_PRIORITY_BACKGROUND).also { it.start() }
         pollingHandler = Handler(pollingThread!!.looper)
-        pollingHandler?.post(ticker)
+        // Start the ticker only from the first ACTION_START. Posting it here too can race
+        // with onStartCommand and queue two polling loops on first launch.
     }
 
     private fun makeFlags(locked: Boolean): Int {
@@ -160,13 +162,17 @@ class OverlayService : Service() {
             catalogRequested = intent.getBooleanExtra(EXTRA_CATALOG, false)
             return START_NOT_STICKY
         }
-        // Explicit Start/Apply replaces the pending callback instead of making a second loop.
-        pollingHandler?.removeCallbacks(ticker)
-        pollingHandler?.post(ticker)
+        // Start exactly one ticker. Repeated Apply/Start intents update persisted settings,
+        // but never enqueue another copy of the sampling loop.
+        if (!pollingStarted) {
+            pollingStarted = true
+            pollingHandler?.post(ticker)
+        }
         return START_NOT_STICKY
     }
 
     override fun onDestroy() {
+        pollingStarted = false
         pollingHandler?.removeCallbacksAndMessages(null)
         pollingThread?.quitSafely()
         try { hudView?.let { windowManager?.removeView(it) } } catch (_: Exception) { }
