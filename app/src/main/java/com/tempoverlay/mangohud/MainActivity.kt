@@ -206,7 +206,7 @@ class MainActivity : Activity() {
         scroll.post {
             scroll.isFillViewport = false
             val child = scroll.getChildAt(0) ?: return@post
-            val params = child.layoutParams as? ScrollView.LayoutParams ?: return@post
+            val params = child.layoutParams as? android.widget.FrameLayout.LayoutParams ?: return@post
             if (params.height != ViewGroup.LayoutParams.WRAP_CONTENT) {
                 params.height = ViewGroup.LayoutParams.WRAP_CONTENT
                 child.layoutParams = params
@@ -360,7 +360,7 @@ class MainActivity : Activity() {
             clipChildren = true
             clipToPadding = true
         }
-        scroll.addView(column, ScrollView.LayoutParams(
+        scroll.addView(column, android.widget.FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT
         ))
