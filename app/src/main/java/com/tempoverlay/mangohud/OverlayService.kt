@@ -52,8 +52,6 @@ class OverlayService : Service() {
             val startedAt = SystemClock.uptimeMillis()
             val config = HudConfig.load(this@OverlayService)
             val snapshot = sensorReader.sample(config)
-            // The same sample feeds both HUD and app preview, avoiding divergent values.
-            TemperatureRepository.publish(snapshot)
             target.post { if (hudView === target) target.update(config, snapshot) }
 
             val elapsedMs = SystemClock.uptimeMillis() - startedAt
@@ -116,8 +114,8 @@ class OverlayService : Service() {
             return
         }
 
-        // Low-priority polling reduces contention with the game and avoids a busy loop.
-        // The same sample feeds the app preview, so the two views stay in sync.
+        // This service is isolated in :overlay; only its native View, sensor reader,
+        // and settings data are loaded while it runs in the background.
         pollingThread = HandlerThread("TempHudThermalPoll", Process.THREAD_PRIORITY_BACKGROUND).also { it.start() }
         pollingHandler = Handler(pollingThread!!.looper)
         pollingHandler?.post(ticker)
@@ -172,13 +170,8 @@ class OverlayService : Service() {
             val key = "core${core}Temp"
             if (config.isEnabled(key)) add(OverlayRow("CPU $core", snapshot.cpuCores.getOrNull(core)))
         }
-        val builtInSourceIds = buildSet {
-            snapshot.cpuOverall?.sourceName?.split(", ")?.forEach { add(it.substringAfterLast(" · ")) }
-            snapshot.gpuOverall?.sourceName?.split(", ")?.forEach { add(it.substringAfterLast(" · ")) }
-            snapshot.cpuCores.filterNotNull().forEach { add(it.sourceName.substringAfterLast(" · ")) }
-        }
-        snapshot.allSensors.filter { config.selectedThermalSensors.contains(it.id) && it.id !in builtInSourceIds }
-            .forEach { add(OverlayRow(it.label, it)) }
+        snapshot.allSensors.filter { config.selectedThermalSensors.contains(it.id) }
+            .forEach { add(OverlayRow(SensorSourceLabels.overlayLabel(it), it)) }
         config.customEntries.forEach { custom ->
             add(OverlayRow(custom.label, snapshot.allSensors.firstOrNull { it.id == custom.sensorId }))
         }

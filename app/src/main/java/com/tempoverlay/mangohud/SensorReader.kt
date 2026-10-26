@@ -156,3 +156,40 @@ class SensorReader {
     private fun readText(file: File): String? =
         try { file.readText().lineSequence().firstOrNull() } catch (_: Exception) { null }
 }
+
+
+object SensorSourceLabels {
+    private val qcomCpu = Regex("^cpu-([0-1])-([0-3])-(usr|step)(?:$|[-_].*)$")
+    private val genericCpu = Regex("^cpu(?:[-_]core)?[-_]?([0-7])[-_](usr|step)(?:$|[-_].*)$")
+    private val indexedGpu = Regex("^(?:gpuss|gpu)[-_]?([0-9]+)-(usr|step)(?:$|[-_].*)$")
+    private val numberedGpu = Regex("^(?:gpuss|gpu)[-_]?([0-9]+)(?:$|[-_].*)$")
+
+    fun cpuCoreOption(reading: ThermalReading): String? {
+        val type = reading.label.lowercase(Locale.US)
+        val qcom = qcomCpu.find(type)
+        if (qcom != null) {
+            val cluster = qcom.groupValues[1].toIntOrNull() ?: return null
+            val local = qcom.groupValues[2].toIntOrNull() ?: return null
+            val core = cluster * 4 + local
+            val variant = qcom.groupValues[3]
+            return "CPU $core · $variant"
+        }
+        val generic = genericCpu.find(type) ?: return null
+        val core = generic.groupValues[1].toIntOrNull() ?: return null
+        return "CPU $core · ${generic.groupValues[2]}"
+    }
+
+    fun gpuSourceOption(reading: ThermalReading): String? {
+        val type = reading.label.lowercase(Locale.US)
+        if (!type.contains("gpu") && !type.contains("gpuss")) return null
+        val indexed = indexedGpu.find(type)
+        if (indexed != null) return "GPU ${indexed.groupValues[1]} · ${indexed.groupValues[2]}"
+        val numbered = numberedGpu.find(type)
+        if (numbered != null) return "GPU ${numbered.groupValues[1]}"
+        return "GPU sensor · ${reading.id}"
+    }
+
+    fun overlayLabel(reading: ThermalReading): String =
+        cpuCoreOption(reading) ?: gpuSourceOption(reading)
+        ?: reading.label.uppercase(Locale.US)
+}

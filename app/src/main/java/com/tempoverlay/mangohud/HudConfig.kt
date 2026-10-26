@@ -1,8 +1,12 @@
 package com.tempoverlay.mangohud
 
 import android.content.Context
+import android.os.Process
+import android.util.AtomicFile
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
+import java.io.FileOutputStream
 import java.util.UUID
 
 data class CustomHudEntry(
@@ -60,7 +64,10 @@ data class HudConfig(
             .putBoolean("lock_position", lockPosition)
             .putInt("position_x_dp", positionXDp.coerceAtLeast(0))
             .putInt("position_y_dp", positionYDp.coerceAtLeast(0))
+            .putBoolean(KEY_RUNNING, isRunning(context))
             .apply()
+
+        writeCrossProcessConfig(context, this)
     }
 
     fun isEnabled(key: String): Boolean = when (key) {
@@ -111,28 +118,18 @@ data class HudConfig(
         const val SENSOR_PREFIX = "sensor:"
         private const val PREFS = "temp_hud_settings"
         private const val KEY_RUNNING = "overlay_running"
+        private const val CONFIG_FILE = "temp_hud_config.json"
+        private const val RUNNING_FILE = "temp_hud_overlay.pid"
 
         fun load(context: Context): HudConfig {
+            readCrossProcessConfig(context)?.let { return it }
             val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             val selected = p.getStringSet(
                 "selected_thermal_sensors",
                 p.getStringSet("selected_gpu_sensors", emptySet())
             )?.toSet() ?: emptySet()
-            val entries = try {
-                val array = JSONArray(p.getString("custom_entries_json", "[]"))
-                buildList {
-                    for (i in 0 until array.length()) {
-                        val item = array.optJSONObject(i) ?: continue
-                        val label = item.optString("label", "").trim()
-                        val sensorId = item.optString("sensorId", "").trim()
-                        if (label.isNotEmpty() && sensorId.isNotEmpty()) {
-                            add(CustomHudEntry(item.optString("id", UUID.randomUUID().toString()), label, sensorId))
-                        }
-                    }
-                }
-            } catch (_: Exception) { emptyList() }
-
-            return HudConfig(
+            val entries = parseEntries(p.getString("custom_entries_json", "[]") ?: "[]")
+            val migrated = HudConfig(
                 showCpuTemp = p.getBoolean("cpu_temp", true),
                 showGpuTemp = p.getBoolean("gpu_temp", true),
                 showCore0Temp = p.getBoolean("cpu0_temp", false),
@@ -153,14 +150,121 @@ data class HudConfig(
                 positionXDp = p.getInt("position_x_dp", 8).coerceAtLeast(0),
                 positionYDp = p.getInt("position_y_dp", 100).coerceAtLeast(0)
             )
+            migrated.save(context)
+            return migrated
         }
 
-        fun isRunning(context: Context): Boolean =
-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_RUNNING, false)
+        private fun parseEntries(raw: String): List<CustomHudEntry> = try {
+            val array = JSONArray(raw)
+            buildList {
+                for (i in 0 until array.length()) {
+                    val item = array.optJSONObject(i) ?: continue
+                    val label = item.optString("label", "").trim()
+                    val sensorId = item.optString("sensorId", "").trim()
+                    if (label.isNotEmpty() && sensorId.isNotEmpty()) {
+                        add(CustomHudEntry(item.optString("id", UUID.randomUUID().toString()), label, sensorId))
+                    }
+                }
+            }
+        } catch (_: Exception) { emptyList() }
+
+        private fun writeCrossProcessConfig(context: Context, config: HudConfig) {
+            val entries = JSONArray()
+            config.customEntries.forEach { entry ->
+                entries.put(JSONObject().put("id", entry.id).put("label", entry.label).put("sensorId", entry.sensorId))
+            }
+            val selected = JSONArray()
+            config.selectedThermalSensors.sorted().forEach(selected::put)
+            val json = JSONObject()
+                .put("format", 1)
+                .put("showCpuTemp", config.showCpuTemp)
+                .put("showGpuTemp", config.showGpuTemp)
+                .put("showCore0Temp", config.showCore0Temp)
+                .put("showCore1Temp", config.showCore1Temp)
+                .put("showCore2Temp", config.showCore2Temp)
+                .put("showCore3Temp", config.showCore3Temp)
+                .put("showCore4Temp", config.showCore4Temp)
+                .put("showCore5Temp", config.showCore5Temp)
+                .put("showCore6Temp", config.showCore6Temp)
+                .put("showCore7Temp", config.showCore7Temp)
+                .put("selectedThermalSensors", selected)
+                .put("customEntries", entries)
+                .put("refreshMs", config.refreshMs.coerceIn(500, 5000))
+                .put("backgroundOpacity", config.backgroundOpacity.coerceIn(0, 65))
+                .put("scalePercent", config.scalePercent.coerceIn(70, 115))
+                .put("textBrightness", config.textBrightness.coerceIn(35, 100))
+                .put("lockPosition", config.lockPosition)
+                .put("positionXDp", config.positionXDp.coerceAtLeast(0))
+                .put("positionYDp", config.positionYDp.coerceAtLeast(0))
+            val atomic = AtomicFile(File(context.filesDir, CONFIG_FILE))
+            var output: FileOutputStream? = null
+            try {
+                output = atomic.startWrite()
+                output.write(json.toString().toByteArray(Charsets.UTF_8))
+                atomic.finishWrite(output)
+            } catch (_: Exception) {
+                if (output != null) atomic.failWrite(output)
+            }
+        }
+
+        private fun readCrossProcessConfig(context: Context): HudConfig? = try {
+            val atomic = AtomicFile(File(context.filesDir, CONFIG_FILE))
+            if (!atomic.baseFile.exists()) return null
+            val json = atomic.openRead().bufferedReader(Charsets.UTF_8).use { JSONObject(it.readText()) }
+            if (json.optInt("format", 0) != 1) return null
+            val selectedJson = json.optJSONArray("selectedThermalSensors") ?: JSONArray()
+            val selected = buildSet {
+                for (i in 0 until selectedJson.length()) {
+                    selectedJson.optString(i).takeIf { it.isNotBlank() }?.let(::add)
+                }
+            }
+            val entries = parseEntries((json.optJSONArray("customEntries") ?: JSONArray()).toString())
+            HudConfig(
+                showCpuTemp = json.optBoolean("showCpuTemp", true),
+                showGpuTemp = json.optBoolean("showGpuTemp", true),
+                showCore0Temp = json.optBoolean("showCore0Temp", false),
+                showCore1Temp = json.optBoolean("showCore1Temp", false),
+                showCore2Temp = json.optBoolean("showCore2Temp", false),
+                showCore3Temp = json.optBoolean("showCore3Temp", false),
+                showCore4Temp = json.optBoolean("showCore4Temp", false),
+                showCore5Temp = json.optBoolean("showCore5Temp", false),
+                showCore6Temp = json.optBoolean("showCore6Temp", false),
+                showCore7Temp = json.optBoolean("showCore7Temp", false),
+                selectedThermalSensors = selected,
+                customEntries = entries,
+                refreshMs = json.optInt("refreshMs", 1500).coerceIn(500, 5000),
+                backgroundOpacity = json.optInt("backgroundOpacity", 0).coerceIn(0, 65),
+                scalePercent = json.optInt("scalePercent", 100).coerceIn(70, 115),
+                textBrightness = json.optInt("textBrightness", 100).coerceIn(35, 100),
+                lockPosition = json.optBoolean("lockPosition", false),
+                positionXDp = json.optInt("positionXDp", 8).coerceAtLeast(0),
+                positionYDp = json.optInt("positionYDp", 100).coerceAtLeast(0)
+            )
+        } catch (_: Exception) { null }
+
+        fun isRunning(context: Context): Boolean {
+            val marker = File(context.filesDir, RUNNING_FILE)
+            val pid = try { marker.readText().trim().toIntOrNull() } catch (_: Exception) { null }
+            if (pid != null && File("/proc/$pid").exists()) return true
+            if (marker.exists()) marker.delete()
+            return false
+        }
 
         fun setRunning(context: Context, running: Boolean) {
-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-                .putBoolean(KEY_RUNNING, running).apply()
+            val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            prefs.edit().putBoolean(KEY_RUNNING, running).apply()
+            val marker = File(context.filesDir, RUNNING_FILE)
+            if (running) {
+                val temp = File(context.filesDir, "$RUNNING_FILE.tmp")
+                try {
+                    temp.writeText(Process.myPid().toString())
+                    if (marker.exists()) marker.delete()
+                    temp.renameTo(marker)
+                } catch (_: Exception) { }
+            } else {
+                marker.delete()
+                File(context.filesDir, "$RUNNING_FILE.tmp").delete()
+            }
         }
     }
 }

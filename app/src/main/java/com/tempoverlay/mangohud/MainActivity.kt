@@ -28,8 +28,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.withContext
 import java.util.Locale
 import java.util.UUID
@@ -107,7 +105,7 @@ private fun SettingsScreen() {
     val density = LocalDensity.current
     val safeTop = with(density) { WindowInsets.safeDrawing.getTop(this).toDp().value.toInt() }
     var config by remember { mutableStateOf(HudConfig.load(context)) }
-    var snapshot by remember { mutableStateOf(TemperatureRepository.snapshots.value) }
+    var snapshot by remember { mutableStateOf(TemperatureSnapshot()) }
     var sensorCatalogSnapshot by remember { mutableStateOf(TemperatureSnapshot()) }
     var overlayActive by remember { mutableStateOf(HudConfig.isRunning(context)) }
     var screenResumed by remember { mutableStateOf(false) }
@@ -115,6 +113,7 @@ private fun SettingsScreen() {
     var search by remember { mutableStateOf("") }
     var showAllSensors by remember { mutableStateOf(false) }
     var showCores by remember { mutableStateOf(false) }
+    var showGpuSources by remember { mutableStateOf(false) }
     var showControls by remember { mutableStateOf(false) }
     var showCustomEditor by remember { mutableStateOf(false) }
     var customLabel by remember { mutableStateOf("") }
@@ -142,38 +141,21 @@ private fun SettingsScreen() {
 
     val reader = remember { SensorReader() }
     val latestConfig by rememberUpdatedState(config)
-    LaunchedEffect(reader, screenResumed, showAllSensors, showCustomEditor) {
+    LaunchedEffect(reader, screenResumed, showAllSensors, showCustomEditor, showCores, showGpuSources) {
         if (!screenResumed) return@LaunchedEffect
+        while (true) {
+            val current = latestConfig
+            overlayActive = HudConfig.isRunning(context)
+            val needsCatalog = showAllSensors || showCustomEditor || showCores || showGpuSources
 
-        // Collect the shared stream only while this activity is resumed. When the
-        // user leaves for a game, this collector and the app's sampler both stop.
-        val snapshotCollector = launch {
-            TemperatureRepository.snapshots.collect { latest -> snapshot = latest }
-        }
-        try {
-            while (true) {
-                val current = latestConfig
-                val serviceOwnsPolling = HudConfig.isRunning(context)
-                overlayActive = serviceOwnsPolling
-                val needsCatalog = showAllSensors || showCustomEditor
-
-                // The overlay service is the sole sampler while active. The app only
-                // scans thermal files when visible and the service is stopped, or when
-                // the user explicitly opens the sensor/custom-row picker.
-                if (!serviceOwnsPolling || needsCatalog) {
-                    val fresh = withContext(Dispatchers.IO) {
-                        reader.sample(current, includeAllForSettings = needsCatalog)
-                    }
-                    if (needsCatalog) sensorCatalogSnapshot = fresh
-                    if (!serviceOwnsPolling) {
-                        TemperatureRepository.publish(fresh)
-                        snapshot = fresh
-                    }
-                }
-                delay(current.refreshMs.toLong())
+            // This activity and the lightweight overlay service run in separate processes.
+            // Poll here only while the screen is visible; on pause this coroutine is cancelled.
+            val fresh = withContext(Dispatchers.IO) {
+                reader.sample(current, includeAllForSettings = needsCatalog)
             }
-        } finally {
-            snapshotCollector.cancel()
+            snapshot = fresh
+            if (needsCatalog) sensorCatalogSnapshot = fresh
+            delay(current.refreshMs.toLong())
         }
     }
 
@@ -213,6 +195,12 @@ private fun SettingsScreen() {
     val filteredSensors = sortedSensors.filter {
         val haystack = "${it.label} ${it.id} ${it.sourceName}".lowercase(Locale.US)
         haystack.contains(search.trim().lowercase(Locale.US))
+    }
+    val cpuCoreSensorOptions = sortedSensors.mapNotNull { reading ->
+        SensorSourceLabels.cpuCoreOption(reading)?.let { reading to it }
+    }
+    val gpuSensorOptions = sortedSensors.mapNotNull { reading ->
+        SensorSourceLabels.gpuSourceOption(reading)?.let { reading to it }
     }
     val selectedCustomSensor = sortedSensors.firstOrNull { it.id == customSensorId }
         ?: sortedSensors.firstOrNull()
@@ -296,6 +284,62 @@ private fun SettingsScreen() {
                     valueColor = reading?.celsius?.let { Color(HudPalette.heatColor(it, config.textBrightness)) } ?: Muted,
                     onChecked = { save(config.withMetric(coreKeys[index], it)) }
                 )
+            }
+            if (cpuCoreSensorOptions.isNotEmpty()) {
+                Text("Sensor source variants · usr / step", color = Muted, fontSize = 10.sp)
+                cpuCoreSensorOptions.forEach { (reading, optionLabel) ->
+                    CompactSensorRow(
+                        label = optionLabel,
+                        value = temp(reading),
+                        detail = "${reading.label} · ${reading.id}",
+                        checked = config.selectedThermalSensors.contains(reading.id),
+                        valueColor = reading.celsius?.let { Color(HudPalette.heatColor(it, config.textBrightness)) } ?: Muted,
+                        onChecked = { save(config.withMetric(HudConfig.SENSOR_PREFIX + reading.id, it)) }
+                    )
+                }
+            } else {
+                Text("No per-core source variants are exposed by this device.", color = Muted, fontSize = 10.sp)
+            }
+        }
+
+        Divider(color = Edge, thickness = 0.7.dp)
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Text("GPU cores / sources", color = MainText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            Text("${gpuSensorOptions.count { config.selectedThermalSensors.contains(it.first.id) }}/${gpuSensorOptions.size}",
+                color = Muted, fontSize = 11.sp)
+            TextButton(
+                onClick = {
+                    val allOn = gpuSensorOptions.isNotEmpty() && gpuSensorOptions.all { config.selectedThermalSensors.contains(it.first.id) }
+                    var next = config
+                    gpuSensorOptions.forEach { (reading, _) ->
+                        next = next.withMetric(HudConfig.SENSOR_PREFIX + reading.id, !allOn)
+                    }
+                    save(next)
+                },
+                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+            ) {
+                Text(if (gpuSensorOptions.isNotEmpty() && gpuSensorOptions.all { config.selectedThermalSensors.contains(it.first.id) }) "None" else "All",
+                    color = Blue, fontSize = 10.sp)
+            }
+            TextButton(onClick = { showGpuSources = !showGpuSources }, contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) {
+                Text(if (showGpuSources) "Hide" else "Edit", color = Blue, fontSize = 11.sp)
+            }
+        }
+        if (showGpuSources) {
+            if (gpuSensorOptions.isEmpty()) {
+                Text("No GPU-labelled thermal zones are exposed by this phone.", color = Muted, fontSize = 10.sp)
+            } else {
+                Text("Select each available GPU-labelled sensor separately.", color = Muted, fontSize = 10.sp)
+                gpuSensorOptions.forEach { (reading, optionLabel) ->
+                    CompactSensorRow(
+                        label = optionLabel,
+                        value = temp(reading),
+                        detail = "${reading.label} · ${reading.id}",
+                        checked = config.selectedThermalSensors.contains(reading.id),
+                        valueColor = reading.celsius?.let { Color(HudPalette.heatColor(it, config.textBrightness)) } ?: Muted,
+                        onChecked = { save(config.withMetric(HudConfig.SENSOR_PREFIX + reading.id, it)) }
+                    )
+                }
             }
         }
 

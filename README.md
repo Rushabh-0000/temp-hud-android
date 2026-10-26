@@ -2,30 +2,42 @@
 
 Compact MangoHud-inspired Android temperature overlay for Android 11+, written in Kotlin with Jetpack Compose Material 3.
 
-## Resource use and live readings
-- The floating overlay is a native Android View hosted by a foreground service. The Compose settings activity stops collecting/polling as soon as it pauses. If the HUD service is running, leaving the app also removes the settings task to free its Compose screen; reopen Temp HUD from the launcher to edit settings while the HUD keeps running.
-- The service samples thermal files on a background-priority thread at the chosen interval (default 1.50 seconds). The app preview consumes the same in-process sample while the overlay is running, so the two displays do not compete with separate readers or show values from different sample times.
-- The app samples sensors itself only while it is resumed and the overlay service is stopped. Browsing all thermal zones triggers a temporary catalog read only while that screen is open.
-- No network permission, analytics, updater UI, APK download/install code, or updater receiver. The overlay only polls the selected CPU/GPU and custom sensor sources unless the user opens the full sensor picker.
+## Low-memory background mode
+- The floating overlay service runs in a dedicated Android process (`:overlay`) and uses a background-priority sensor thread. The UI process is not needed to keep the HUD visible.
+- When the HUD is active and you leave the app, the settings task is removed; the OS can release the Compose Activity process while the separate overlay process remains.
+- Settings are stored in an atomic app-private JSON file so UI and overlay processes read the same settings reliably. The app samples sensors only while its screen is visible; it stops polling and collecting when paused.
+- Overlay and app can have different sample moments while the settings screen is open, but the HUD does not wait for the app UI. Thermal drivers may refresh values less frequently than the chosen interval.
 
-## Overlay features
-- Default rows are overall CPU and GPU temperatures; CPU 0-7 and any readable thermal-zone sensor can be selected independently.
-- User-defined rows support a custom label and any available thermal sensor.
-- Border-free, text-only HUD by default. White labels are fixed; temperature numbers use a green-to-red heat scale. Text brightness, scale, refresh interval, optional background opacity, position, and touch-through lock are configurable.
-- Refresh interval: 0.50–5.00 seconds in 0.05-second steps, default 1.50 seconds.
-- Overall CPU temperature averages distinct mapped per-core sources when possible, otherwise deduplicated CPU-labelled zones. Overall GPU temperature averages distinct GPU-labelled zones. Qualcomm paired `-usr`/`-step` sensors are deduplicated, preferring `-usr`.
-- If Android/OEM firmware does not expose a readable sensor, the app shows N/A rather than fabricating a reading.
+## Sensor selection
+- Overall CPU and GPU temperatures appear first. CPU 0–7 can be selected independently.
+- CPU core edit includes each readable Qualcomm `usr` and `step` thermal-zone variant separately. GPU cores/sources lists every readable GPU-labelled zone and lets you select `usr` and `step` variants independently where exposed.
+- These are thermal-zone readings exposed by the phone firmware, not guaranteed physical GPU-core sensors. If firmware exposes no suitable sensor, the app shows N/A.
+- Any readable thermal-zone sensor can be selected from Browse, and custom rows can pair a custom label with any selected temperature sensor.
 
-## One GitHub Actions workflow
-The single workflow `.github/workflows/android.yml` builds an optimized APK on pushes and supports manually publishing a signed GitHub Release.
+## Appearance
+- Border-free, text-only HUD by default; no header or load/clock rows. White labels, heat-coloured values, adjustable text brightness, size, refresh interval, optional background opacity, saved position and touch-through lock.
+- Refresh interval ranges from 0.50–5.00 seconds in 0.05-second steps; default is 1.50 seconds.
+- The overlay remains a native Android View; the full Compose UI is separate and does not run as a background screen.
 
-For a persistent release signature, add these repository **Settings → Secrets and variables → Actions** secrets:
-- `ANDROID_KEYSTORE_BASE64` — Base64-encoded keystore file
-- `ANDROID_KEYSTORE_PASSWORD` — keystore password
-- `ANDROID_KEY_ALIAS` — key alias
-- `ANDROID_KEY_PASSWORD` — key password
+## Privacy
+No Internet permission, analytics, updater UI, APK download/install code, or update receiver. APKs are installed manually.
 
-On push, CI creates a disposable key only if no signing secrets exist, and uploads a short-lived test APK. To publish a proper release, run the workflow manually with **Publish release** enabled; all four secrets are required and the saved keystore signs the release. Keep the keystore backed up securely and never commit it.
+## One workflow and release signing
+The only workflow is `.github/workflows/android.yml`. It builds on pushes and has a manual option to publish a signed release using persistent repository secrets.
 
-## Build
-AGP 9.3.1, Kotlin 2.4.21, Gradle 9.7.0, JDK 25, compile/target SDK 36, min SDK 30, Compose BOM 2026.06.00. Release code and resources are minified/shrunk.
+Generate the persistent keystore plus a copy/paste text file from a Linux/macOS/JDK workspace with:
+
+```bash
+bash scripts/generate-signing-key.sh
+```
+
+The command creates `temp-hud-release.p12` and `github-release-secrets.txt` in the workspace root. Copy each value into the matching repository Action secret:
+- `ANDROID_KEYSTORE_BASE64`
+- `ANDROID_KEYSTORE_PASSWORD`
+- `ANDROID_KEY_ALIAS`
+- `ANDROID_KEY_PASSWORD`
+
+The generated key and secrets file are ignored by Git. Back up the keystore securely; every update must use the same signing key. Never post either file or its contents publicly. Then run **Temp HUD Build and Release** manually with **Publish release** enabled.
+
+## Toolchain
+AGP 9.3.1, Kotlin 2.4.21, Gradle 9.7.0, JDK 25, compile/target SDK 36, min SDK 30, Compose BOM 2026.06.00. Release code/resources are minified and shrunk.
