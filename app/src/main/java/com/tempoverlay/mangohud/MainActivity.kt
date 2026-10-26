@@ -40,15 +40,16 @@ import android.widget.TextView
 import java.util.Locale
 
 private object Ui {
-    const val BG = 0xFF070A11.toInt()
-    const val PANEL = 0xFF111927.toInt()
-    const val PANEL_ALT = 0xFF1A2840.toInt()
-    const val MINT = 0xFFC7FF61.toInt()
-    const val BLUE = 0xFF6BDEFF.toInt()
-    const val WHITE = 0xFFF5F7FC.toInt()
-    const val MUTED = 0xFFA1ACC0.toInt()
-    const val EDGE = 0xFF2C3A50.toInt()
-    const val RED = 0xFFFF788E.toInt()
+    const val BG = 0xFF070B12.toInt()
+    const val PANEL = 0xFF101927.toInt()
+    const val PANEL_ALT = 0xFF17243A.toInt()
+    const val MINT = 0xFFC6F16F.toInt()
+    const val BLUE = 0xFF59DCEB.toInt()
+    const val WARM = 0xFFFFAA68.toInt()
+    const val WHITE = 0xFFF3F6FB.toInt()
+    const val MUTED = 0xFF9BA9BC.toInt()
+    const val EDGE = 0xFF2C3A4F.toInt()
+    const val RED = 0xFFFF718A.toInt()
 }
 private val SOURCE_INDEX_PATTERN = Regex("(?:CPU|GPU) (\\d+)")
 private data class SourceOption(val reading: ThermalReading, val name: String, val variant: String)
@@ -389,29 +390,34 @@ class MainActivity : Activity() {
 
         fun sectionHeader(kicker: String, title: String, subtitle: String) {
             val group = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(dp(2), dp(2), dp(2), dp(3))
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(2), dp(2), dp(2), dp(2))
             }
-            group.addView(label(kicker, 9f, Ui.MINT, true).apply {
-                letterSpacing = 1.25f
-            }, matchWrap(bottom = 5))
-            group.addView(label(title, 19f, Ui.WHITE, true), matchWrap())
-            group.addView(label(subtitle, 11f, Ui.MUTED, false).apply {
+            val rail = View(this).apply { background = rounded(Ui.MINT, Ui.MINT, 2) }
+            group.addView(rail, LinearLayout.LayoutParams(dp(3), dp(38)).apply { marginEnd = dp(11) })
+            val copy = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+            copy.addView(label(kicker, 8.5f, Ui.MINT, true).apply {
+                letterSpacing = 1.35f
+            }, matchWrap(bottom = 4))
+            copy.addView(label(title, 18f, Ui.WHITE, true), matchWrap())
+            copy.addView(label(subtitle, 10.5f, Ui.MUTED, false).apply {
                 setPadding(0, dp(4), 0, 0)
             }, matchWrap())
-            column.addView(group, matchWrap(top = 17, bottom = 8))
+            group.addView(copy, LinearLayout.LayoutParams(0, -2, 1f))
+            column.addView(group, matchWrap(top = 22, bottom = 10))
         }
 
         fun temperatureTile(title: String, detail: String, key: String, enabled: Boolean, accent: Int): LinearLayout {
             val tile = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.TOP
-                setPadding(dp(12), dp(13), dp(10), dp(9))
+                setPadding(dp(12), dp(13), dp(10), dp(10))
                 background = GradientDrawable(
                     GradientDrawable.Orientation.TL_BR,
                     intArrayOf(Ui.PANEL_ALT, Ui.PANEL)
                 ).apply {
-                    cornerRadius = dp(17).toFloat()
+                    cornerRadius = dp(18).toFloat()
                     setStroke(dp(1), Ui.EDGE)
                 }
             }
@@ -419,13 +425,18 @@ class MainActivity : Activity() {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
             }
-            head.addView(label(title, 12f, accent, true), LinearLayout.LayoutParams(0, -2, 1f))
-            head.addView(label("THERMAL", 8f, Ui.MUTED, true).apply {
-                letterSpacing = 0.5f
-            })
+            val glyph = label(if (title == "CPU") "C" else "G", 12f, accent, true).apply {
+                gravity = Gravity.CENTER
+                background = rounded(Ui.BG, accent, 10)
+            }
+            head.addView(glyph, LinearLayout.LayoutParams(dp(30), dp(30)).apply { marginEnd = dp(8) })
+            head.addView(label(title, 12f, Ui.WHITE, true), LinearLayout.LayoutParams(0, -2, 1f))
+            val dot = View(this).apply { background = rounded(accent, accent, 6) }
+            head.addView(dot, LinearLayout.LayoutParams(dp(6), dp(6)))
             tile.addView(head, matchWrap())
-            tile.addView(label(detail, 9.5f, Ui.MUTED, false).apply {
-                setPadding(0, dp(5), 0, dp(8))
+            tile.addView(label(detail.uppercase(Locale.US), 8f, Ui.MUTED, true).apply {
+                letterSpacing = 0.65f
+                setPadding(0, dp(10), 0, dp(7))
                 maxLines = 1
             }, matchWrap())
 
@@ -436,6 +447,11 @@ class MainActivity : Activity() {
             }
             valueViews[key] = value
             tile.addView(value, matchWrap())
+            val separator = View(this).apply { setBackgroundColor(Ui.EDGE) }
+            tile.addView(separator, LinearLayout.LayoutParams(-1, dp(1)).apply {
+                topMargin = dp(10)
+                bottomMargin = dp(5)
+            })
 
             val visible = CheckBox(this).apply {
                 text = "Show on HUD"
@@ -443,12 +459,14 @@ class MainActivity : Activity() {
                 setTextColor(Ui.MUTED)
                 buttonTintList = ColorStateList.valueOf(accent)
                 isChecked = enabled
-                setPadding(0, dp(4), 0, 0)
+                setPadding(0, 0, 0, 0)
+                minHeight = dp(30)
+                minimumHeight = dp(30)
                 setOnCheckedChangeListener { _, checked ->
                     save(if (key == "cpuTemp") config.copy(showCpuTemp = checked) else config.copy(showGpuTemp = checked))
                 }
             }
-            tile.addView(visible, matchWrap(top = 5))
+            tile.addView(visible, matchWrap(top = 1))
             return tile
         }
 
@@ -456,25 +474,21 @@ class MainActivity : Activity() {
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, 0, 0, dp(15))
+            setPadding(0, 0, 0, dp(14))
         }
         val logo = ImageView(this).apply {
             setImageResource(R.mipmap.ic_launcher)
             contentDescription = "Temp HUD app icon"
-            scaleType = ImageView.ScaleType.FIT_CENTER
-            background = rounded(Ui.PANEL_ALT, Ui.EDGE, 14)
-            setPadding(dp(4), dp(4), dp(4), dp(4))
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            background = null
+            setPadding(0, 0, 0, 0)
         }
-        header.addView(logo, LinearLayout.LayoutParams(dp(48), dp(48)))
+        header.addView(logo, LinearLayout.LayoutParams(dp(46), dp(46)))
         val titleCol = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), 0, 0, 0)
         }
         titleCol.addView(label("Temp HUD", 22f, Ui.WHITE, true), matchWrap())
-        titleCol.addView(label("THERMAL CONTROL CENTRE", 9f, Ui.MUTED, true).apply {
-            letterSpacing = 0.65f
-            setPadding(0, dp(4), 0, 0)
-        }, matchWrap())
         header.addView(titleCol, LinearLayout.LayoutParams(0, -2, 1f))
         statusView = label(if (HudConfig.isRunning()) "RUNNING" else "READY", 9f,
             if (HudConfig.isRunning()) Ui.MINT else Ui.MUTED, true).apply {
@@ -482,29 +496,37 @@ class MainActivity : Activity() {
             setPadding(dp(10), dp(8), dp(10), dp(8))
             background = rounded(Ui.PANEL_ALT, if (HudConfig.isRunning()) Ui.MINT else Ui.EDGE, 18)
         }
+        statusView?.letterSpacing = 0.35f
         header.addView(statusView)
         column.addView(header, matchWrap())
 
         // Hero dashboard: clear, separate CPU and GPU readings instead of small text rows.
         val overview = card().apply {
-            setPadding(dp(12), dp(13), dp(12), dp(13))
-            background = rounded(Ui.PANEL, Ui.EDGE, 21)
+            setPadding(dp(13), dp(14), dp(13), dp(14))
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(0xFF17243A.toInt(), 0xFF0D1420.toInt())
+            ).apply {
+                cornerRadius = dp(21).toFloat()
+                setStroke(dp(1), Ui.EDGE)
+            }
         }
         val overviewHeading = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
         val overviewCopy = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        overviewCopy.addView(label("LIVE THERMALS", 10f, Ui.WHITE, true).apply {
-            letterSpacing = 1.0f
+        overviewCopy.addView(label("LIVE READINGS", 10f, Ui.WHITE, true).apply {
+            letterSpacing = 1.25f
         }, matchWrap())
-        overviewCopy.addView(label("Device temperature at a glance", 10f, Ui.MUTED, false).apply {
+        overviewCopy.addView(label("CPU & graphics temperature", 10f, Ui.MUTED, false).apply {
             setPadding(0, dp(4), 0, 0)
         }, matchWrap())
         overviewHeading.addView(overviewCopy, LinearLayout.LayoutParams(0, -2, 1f))
-        overviewHeading.addView(label("ON-DEVICE", 8f, Ui.BLUE, true).apply {
-            setPadding(dp(8), dp(6), dp(8), dp(6))
-            background = rounded(Ui.PANEL_ALT, Ui.EDGE, 10)
+        overviewHeading.addView(label("LOCAL", 8f, Ui.BLUE, true).apply {
+            letterSpacing = 0.8f
+            setPadding(dp(9), dp(6), dp(9), dp(6))
+            background = rounded(Ui.BG, Ui.EDGE, 10)
         })
         overview.addView(overviewHeading, matchWrap(bottom = 12))
 
@@ -524,13 +546,13 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        actions.addView(button(if (HudConfig.isRunning()) "Apply settings" else "Start floating HUD", false).apply {
+        actions.addView(button(if (HudConfig.isRunning()) "Apply changes" else "Start overlay", false).apply {
             setOnClickListener {
                 config.save(this@MainActivity)
                 startOverlay()
             }
         }, LinearLayout.LayoutParams(0, dp(50), 1f).apply { marginEnd = dp(6) })
-        actions.addView(button("Stop HUD", true, Ui.RED).apply {
+        actions.addView(button("Stop", true, Ui.RED).apply {
             setOnClickListener { stopOverlay() }
         }, LinearLayout.LayoutParams(0, dp(50), 0.58f).apply { marginStart = dp(6) })
         column.addView(actions, matchWrap(top = 10))
@@ -681,36 +703,59 @@ class MainActivity : Activity() {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(10), dp(8), dp(8), dp(8))
-            background = rounded(Ui.PANEL, Ui.EDGE, 13)
-            clipToPadding = false
+            setPadding(dp(11), dp(10), dp(10), dp(10))
+            background = GradientDrawable(
+                GradientDrawable.Orientation.LEFT_RIGHT,
+                intArrayOf(Ui.PANEL_ALT, Ui.PANEL)
+            ).apply {
+                cornerRadius = dp(16).toFloat()
+                setStroke(dp(1), Ui.EDGE)
+            }
+            minimumHeight = dp(68)
         }
-        val accentMark = View(this).apply {
-            background = rounded(accent, accent, 3)
-            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        val code = when (title) {
+            "CPU cores" -> "CPU"
+            "GPU sources" -> "GPU"
+            "Available sensors" -> "ALL"
+            "Custom rows" -> "+"
+            else -> "HUD"
         }
-        row.addView(accentMark, LinearLayout.LayoutParams(dp(3), dp(32)).apply { marginEnd = dp(10) })
+        val iconBadge = label(code, if (code.length > 2) 9f else 12f, accent, true).apply {
+            gravity = Gravity.CENTER
+            background = rounded(Ui.BG, accent, 11)
+        }
+        row.addView(iconBadge, LinearLayout.LayoutParams(dp(42), dp(42)).apply {
+            marginEnd = dp(11)
+        })
+
         val copy = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        copy.addView(label(title, 13.5f, Ui.WHITE, true), matchWrap())
+        copy.addView(label(title, 13f, Ui.WHITE, true), matchWrap())
         val description = when (title) {
-            "CPU cores" -> "Choose individual CPU usr / step readings"
-            "GPU sources" -> "Choose available GPU-labelled thermal zones"
-            "Available sensors" -> "Browse all readable thermal zones"
-            "Custom rows" -> "Add your own labels to selected sensors"
-            else -> "Temperature display settings"
+            "CPU cores" -> "Select per-core readings"
+            "GPU sources" -> "Select graphics sensor sources"
+            "Available sensors" -> "Browse every readable sensor"
+            "Custom rows" -> "Build your own HUD row"
+            else -> "Overlay display settings"
         }
-        copy.addView(label(description, 9.5f, Ui.MUTED, false).apply { setPadding(0, dp(3), 0, 0) }, matchWrap())
+        copy.addView(label(description, 9.5f, Ui.MUTED, false).apply {
+            setPadding(0, dp(4), 0, 0)
+            maxLines = 2
+        }, matchWrap())
         row.addView(copy, LinearLayout.LayoutParams(0, -2, 1f))
+
         row.addView(label(count, 10f, accent, true).apply {
-            setPadding(dp(8), dp(5), dp(8), dp(5))
-            background = rounded(Ui.PANEL_ALT, Ui.EDGE, 12)
-        }, wrapWrap(start = 5, end = 5))
-        row.addView(button(if (expanded) "Done" else "Edit", true, accent).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(8), dp(6), dp(8), dp(6))
+            background = rounded(Ui.BG, Ui.EDGE, 10)
+        }, wrapWrap(start = 6, end = 7))
+
+        row.addView(button(if (expanded) "Close" else "Open", true, accent).apply {
             setPadding(dp(8), 0, dp(8), 0)
-            minHeight = dp(34); minimumHeight = dp(34)
+            minHeight = dp(36)
+            minimumHeight = dp(36)
             setOnClickListener { onClick() }
         }, wrapWrap())
-        parent.addView(row, matchWrap(top = 7, bottom = 1))
+        parent.addView(row, matchWrap(top = 5, bottom = 2))
     }
 
     private fun buildSourceGroups(parent: LinearLayout, isGpu: Boolean) {
@@ -957,7 +1002,7 @@ class MainActivity : Activity() {
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(9), dp(5), dp(9), dp(5)) }
         val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         header.addView(label(title, 12f, Ui.WHITE, true), LinearLayout.LayoutParams(0, -2, 1f))
-        val valueLabel = label(display(current), 11f, Ui.MINT, true).apply { typeface = Typeface.MONOSPACE }
+        val valueLabel = label(display(current), 11f, Ui.MINT, true).apply { typeface = Typeface.create("sans-serif-monospace", Typeface.BOLD) }
         header.addView(valueLabel)
         col.addView(header, matchWrap())
         val stride = step.coerceAtLeast(1)
@@ -1058,24 +1103,33 @@ class MainActivity : Activity() {
     private fun button(text: String, outline: Boolean, accent: Int = Ui.MINT): Button =
         Button(this).apply {
             this.text = text
-            textSize = 11f
+            textSize = 12f
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            letterSpacing = 0.015f
             isAllCaps = false
             setTextColor(if (outline) accent else Ui.BG)
-            val fill = rounded(if (outline) Ui.PANEL else accent, if (outline) Ui.EDGE else accent, 10)
+            val fill = rounded(if (outline) Ui.PANEL_ALT else accent, accent, 14)
             background = RippleDrawable(
-                ColorStateList.valueOf(if (outline) 0x338CFFD0 else 0x44FFFFFF),
+                ColorStateList.valueOf(if (outline) 0x33FFFFFF else 0x44FFFFFF),
                 fill,
                 null
             )
+            setPadding(dp(12), dp(3), dp(12), dp(3))
             stateListAnimator = null
-            minHeight = dp(42)
-            minimumHeight = dp(42)
+            minHeight = dp(44)
+            minimumHeight = dp(44)
         }
 
     private fun card(): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        setPadding(dp(5), dp(4), dp(5), dp(4))
-        background = rounded(Ui.PANEL, Ui.EDGE, 14)
+        setPadding(dp(6), dp(5), dp(6), dp(5))
+        background = GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            intArrayOf(Ui.PANEL_ALT, Ui.PANEL)
+        ).apply {
+            cornerRadius = dp(18).toFloat()
+            setStroke(dp(1), Ui.EDGE)
+        }
     }
 
     private fun divider(): View = View(this).apply {
