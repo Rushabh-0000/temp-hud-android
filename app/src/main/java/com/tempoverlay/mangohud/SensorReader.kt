@@ -327,11 +327,13 @@ class SensorReader {
     private fun isGpuZone(type: String): Boolean = type.contains("gpu")
 
     private fun coreIndex(type: String): Int? {
+        // On the Snapdragon 778G thermal map, cpu-1-0-usr .. cpu-1-7-usr
+        // are the eight per-core zones. cpu-0-0-usr .. cpu-0-3-usr are
+        // separate thermal inputs used by the apc-0 virtual zone, not cores.
         val qcom = QCOM_CORE_PATTERN.find(type)
         if (qcom != null) {
-            val cluster = qcom.groupValues[1].toIntOrNull() ?: return null
-            val local = qcom.groupValues[2].toIntOrNull() ?: return null
-            return (cluster * 4 + local).takeIf { it in 0..7 }
+            val core = qcom.groupValues[1].toIntOrNull() ?: return null
+            return core.takeIf { it in 0..7 }
         }
         for (pattern in GENERIC_CORE_PATTERNS) {
             val match = pattern.find(type) ?: continue
@@ -345,14 +347,14 @@ class SensorReader {
         try { file.readText().lineSequence().firstOrNull() } catch (_: Exception) { null }
 
     private companion object {
-        val QCOM_CORE_PATTERN = Regex("^cpu-([0-1])-([0-3])-usr$")
+        val QCOM_CORE_PATTERN = Regex("^cpu-1-([0-7])-usr$")
         val GENERIC_CORE_PATTERNS = listOf(
             Regex("^cpu-([0-7])-usr$"),
             Regex("^cpu([0-7])-usr$"),
             Regex("^cpu[-_]core[-_]?([0-7])-usr$"),
             Regex("^cpu_core[-_]?([0-7])-usr$")
         )
-        val EXACT_CORE_PATTERN = Regex("^cpu-[0-7]-usr$")
+        val EXACT_CORE_PATTERN = Regex("^cpu-1-[0-7]-usr$")
         val GPU_INDEX_PATTERN = Regex("^(?:gpuss|gpu)[-_]?(\\d+)-usr$")
     }
 }
@@ -361,7 +363,7 @@ class SensorReader {
 object SensorSourceLabels {
     private val sourceSuffix = Regex("[-_](usr|step)(?:[-_].*)?$", RegexOption.IGNORE_CASE)
     private val sourceVariantPattern = Regex("(?:^|[-_])(usr|step)(?:$|[-_])", RegexOption.IGNORE_CASE)
-    private val qcomCpu = Regex("^cpu-([0-1])-([0-3])-usr$")
+    private val qcomCpu = Regex("^cpu-1-([0-7])-usr$")
     private val genericCpu = Regex("^cpu(?:[-_]core)?[-_]?([0-7])-usr$")
     private val indexedGpu = Regex("^(?:gpuss|gpu)[-_]?([0-9]+)-usr$")
 
@@ -370,9 +372,8 @@ object SensorSourceLabels {
         if (!type.endsWith("-usr") || type.endsWith("-step")) return null
         val qcom = qcomCpu.find(type)
         if (qcom != null) {
-            val cluster = qcom.groupValues[1].toIntOrNull() ?: return null
-            val local = qcom.groupValues[2].toIntOrNull() ?: return null
-            return "CPU ${cluster * 4 + local} · usr"
+            val core = qcom.groupValues[1].toIntOrNull() ?: return null
+            return "CPU $core · usr"
         }
         val generic = genericCpu.find(type) ?: return null
         return "CPU ${generic.groupValues[1]} · usr"
