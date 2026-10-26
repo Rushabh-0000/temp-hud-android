@@ -111,11 +111,12 @@ class SensorReader {
     }
 
     fun sample(config: HudConfig, includeAllForSettings: Boolean = false): TemperatureSnapshot {
-        val selectedIds = config.selectedThermalSensors + config.customEntries.map { it.sensorId }
-        val readCpu = includeAllForSettings || config.cpuTempEnabled()
+        val selectedIds = config.selectedThermalSensors
+        val customSensorIds = if (config.customEntries.isEmpty()) emptySet() else config.customEntries.mapTo(HashSet()) { it.sensorId }
+        val readCpu = includeAllForSettings || config.showCpuTemp
         val readGpu = includeAllForSettings || config.showGpuTemp
         val toRead = if (includeAllForSettings) catalog else catalog.filter { zone ->
-            zone.id in selectedIds ||
+            zone.id in selectedIds || zone.id in customSensorIds ||
                 (readCpu && isCpuZone(zone.type)) ||
                 (readGpu && isGpuZone(zone.type))
         }
@@ -164,7 +165,9 @@ class SensorReader {
 
     private fun average(values: List<ZoneValue>): Float? {
         if (values.isEmpty()) return null
-        val mean = values.map { it.celsius }.average()
+        var total = 0.0
+        for (value in values) total += value.celsius
+        val mean = total / values.size
         return mean.takeIf { it.isFinite() }?.toFloat()
     }
 
@@ -203,22 +206,17 @@ class SensorReader {
         else -> 1
     }
 
-    private fun isCpuZone(type: String): Boolean = type.contains("cpu") || type.contains("cpuss")
-    private fun isGpuZone(type: String): Boolean = type.contains("gpu") || type.contains("gpuss")
+    private fun isCpuZone(type: String): Boolean = type.contains("cpu")
+    private fun isGpuZone(type: String): Boolean = type.contains("gpu")
 
     private fun coreIndex(type: String): Int? {
-        val qcom = Regex("^cpu-([0-1])-([0-3])-(?:usr|step)(?:[-_].*)?$").find(type)
+        val qcom = QCOM_CORE_PATTERN.find(type)
         if (qcom != null) {
             val cluster = qcom.groupValues[1].toIntOrNull() ?: return null
             val local = qcom.groupValues[2].toIntOrNull() ?: return null
             return (cluster * 4 + local).takeIf { it in 0..7 }
         }
-        val patterns = listOf(
-            Regex("^cpu([0-7])(?:$|[-_].*)"),
-            Regex("^cpu[-_]core[-_]?([0-7])(?:$|[-_].*)"),
-            Regex("^cpu_core[-_]?([0-7])(?:$|[-_].*)")
-        )
-        for (pattern in patterns) {
+        for (pattern in GENERIC_CORE_PATTERNS) {
             val match = pattern.find(type) ?: continue
             return match.groupValues.getOrNull(1)?.toIntOrNull()
         }
@@ -228,10 +226,20 @@ class SensorReader {
     private fun readNumber(file: File): Long? = readText(file)?.trim()?.toLongOrNull()
     private fun readText(file: File): String? =
         try { file.readText().lineSequence().firstOrNull() } catch (_: Exception) { null }
+
+    private companion object {
+        val QCOM_CORE_PATTERN = Regex("^cpu-([0-1])-([0-3])-(?:usr|step)(?:[-_].*)?$")
+        val GENERIC_CORE_PATTERNS = listOf(
+            Regex("^cpu([0-7])(?:$|[-_].*)"),
+            Regex("^cpu[-_]core[-_]?([0-7])(?:$|[-_].*)"),
+            Regex("^cpu_core[-_]?([0-7])(?:$|[-_].*)")
+        )
+    }
 }
 
 
 object SensorSourceLabels {
+    private val sourceSuffix = Regex("[-_](usr|step)$", RegexOption.IGNORE_CASE)
     private val qcomCpu = Regex("^cpu-([0-1])-([0-3])-(usr|step)(?:$|[-_].*)$")
     private val genericCpu = Regex("^cpu(?:[-_]core)?[-_]?([0-7])[-_](usr|step)(?:$|[-_].*)$")
     private val indexedGpu = Regex("^(?:gpuss|gpu)[-_]?([0-9]+)-(usr|step)(?:$|[-_].*)$")
@@ -271,6 +279,6 @@ object SensorSourceLabels {
     fun overlayLabel(reading: ThermalReading): String {
         val base = (cpuCoreOption(reading) ?: gpuSourceOption(reading)
             ?: reading.label.uppercase(Locale.US)).substringBefore(" · ")
-        return base.replace(Regex("[-_](usr|step)$", RegexOption.IGNORE_CASE), "")
+        return base.replace(sourceSuffix, "")
     }
 }

@@ -52,9 +52,17 @@ jobs:
 
       - name: Install Android SDK packages
         run: |
+          set -euo pipefail
           SDKMANAGER="$(command -v sdkmanager || echo "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager")"
-          yes | "$SDKMANAGER" --licenses
-          "$SDKMANAGER" "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+          packages=()
+          [[ -d "$ANDROID_HOME/platforms/android-36" ]] || packages+=("platforms;android-36")
+          [[ -x "$ANDROID_HOME/build-tools/36.0.0/apksigner" ]] || packages+=("build-tools;36.0.0")
+          if (("${#packages[@]}" > 0)); then
+            yes | "$SDKMANAGER" --licenses >/dev/null || true
+            "$SDKMANAGER" "${packages[@]}"
+          else
+            echo "Android SDK 36 and apksigner are already installed; skipping SDK Manager."
+          fi
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
@@ -83,10 +91,10 @@ jobs:
           if [[ "$PUBLISH_RELEASE" == "true" ]]; then
             latest="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1 --json tagName --jq '.[0].tagName // empty' || true)"
             if [[ -z "$latest" ]]; then
-              version="0.7.4"
+              version="0.7.5"
             else
               base="${latest#v}"
-              if [[ ! "$base" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]; then base="0.7.4"; fi
+              if [[ ! "$base" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]; then base="0.7.5"; fi
               IFS='.' read -r major minor patch <<< "$base"
               case "$RELEASE_BUMP" in
                 major) major=$((major + 1)); minor=0; patch=0 ;;
@@ -129,7 +137,7 @@ jobs:
           echo "ANDROID_KEYSTORE_PATH=$key_path" >> "$GITHUB_ENV"
 
       - name: Build minified and resource-shrunk APK
-        run: gradle --no-daemon --stacktrace -PVERSION_NAME="$VERSION_NAME" -PVERSION_CODE="$VERSION_CODE" assembleRelease
+        run: gradle --build-cache --parallel -PVERSION_NAME="$VERSION_NAME" -PVERSION_CODE="$VERSION_CODE" assembleRelease
 
       - name: Verify APK signature and compute checksum
         id: apk

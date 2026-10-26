@@ -44,8 +44,8 @@ private object Ui {
     const val WHITE = 0xFFF0F4F8.toInt()
     const val MUTED = 0xFF8D9BAA.toInt()
     const val EDGE = 0xFF293643.toInt()
-    const val RED = 0xFFFF8888.toInt()
 }
+private val SOURCE_INDEX_PATTERN = Regex("(?:CPU|GPU) (\\d+)")
 private data class SourceOption(val reading: ThermalReading, val name: String, val variant: String)
 
 class MainActivity : Activity() {
@@ -76,14 +76,15 @@ class MainActivity : Activity() {
             if (intent.action != OverlayService.ACTION_SNAPSHOT) return
             val raw = intent.getStringExtra(OverlayService.EXTRA_SNAPSHOT) ?: return
             val fresh = TemperatureSnapshot.fromJson(raw) ?: return
-            val previousCatalogIds = snapshotSignature(catalogSnapshot)
+            val wantsCatalog = needsCatalog()
+            val oldCatalog = if (wantsCatalog) catalogSnapshot else null
             snapshot = fresh
             val catalogComplete = intent.getBooleanExtra(OverlayService.EXTRA_CATALOG_COMPLETE, false)
-            catalogSnapshot = if (needsCatalog() && catalogComplete) fresh else if (needsCatalog()) fresh else TemperatureSnapshot()
-            fullCatalogLoaded = needsCatalog() && catalogComplete
+            catalogSnapshot = if (wantsCatalog) fresh else TemperatureSnapshot()
+            fullCatalogLoaded = wantsCatalog && catalogComplete
             statusView?.text = "RUNNING"
             statusView?.setTextColor(Ui.MINT)
-            if (needsCatalog() && previousCatalogIds != snapshotSignature(catalogSnapshot)) {
+            if (wantsCatalog && oldCatalog != null && !sameSensorIds(oldCatalog, fresh)) {
                 rebuildKeepingScroll()
             } else {
                 updateValues()
@@ -94,18 +95,18 @@ class MainActivity : Activity() {
     private val poller = object : Runnable {
         override fun run() {
             val bgHandler = samplingHandler ?: return
-            if (!screenActive || HudConfig.isRunning(this@MainActivity)) return
+            if (!screenActive || HudConfig.isRunning()) return
             val start = SystemClock.uptimeMillis()
             val cfg = config
             val fullScan = needsCatalog()
-            val previousCatalogIds = snapshotSignature(catalogSnapshot)
+            val previousCatalog = if (fullScan) catalogSnapshot else null
             val fresh = reader.sample(cfg, includeAllForSettings = fullScan)
             uiHandler.post {
-                if (screenActive && !HudConfig.isRunning(this@MainActivity)) {
+                if (screenActive && !HudConfig.isRunning()) {
                     snapshot = fresh
                     catalogSnapshot = if (fullScan) fresh else TemperatureSnapshot()
                     fullCatalogLoaded = fullScan
-                    if (fullScan && previousCatalogIds != snapshotSignature(catalogSnapshot)) rebuildKeepingScroll() else updateValues()
+                    if (fullScan && previousCatalog != null && !sameSensorIds(previousCatalog, fresh)) rebuildKeepingScroll() else updateValues()
                 }
             }
             val elapsed = SystemClock.uptimeMillis() - start
@@ -140,19 +141,20 @@ class MainActivity : Activity() {
                 receiverRegistered = true
             } catch (_: Exception) { }
         }
+        OverlayService.setSnapshotListenerActive(receiverRegistered)
     }
 
     override fun onResume() {
         super.onResume()
         screenActive = true
         config = HudConfig.load(this)
-        if (HudConfig.isRunning(this)) {
+        if (HudConfig.isRunning()) {
             requestCatalogOnce()
         } else {
             startSampler()
         }
-        statusView?.text = if (HudConfig.isRunning(this)) "RUNNING" else "READY"
-        statusView?.setTextColor(if (HudConfig.isRunning(this)) Ui.MINT else Ui.MUTED)
+        statusView?.text = if (HudConfig.isRunning()) "RUNNING" else "READY"
+        statusView?.setTextColor(if (HudConfig.isRunning()) Ui.MINT else Ui.MUTED)
         updateValues()
     }
 
@@ -164,12 +166,13 @@ class MainActivity : Activity() {
     }
 
     override fun onStop() {
+        OverlayService.setSnapshotListenerActive(false)
         if (receiverRegistered) {
             try { unregisterReceiver(snapshotReceiver) } catch (_: Exception) { }
             receiverRegistered = false
         }
         super.onStop()
-        if (HudConfig.isRunning(this) && !isChangingConfigurations) finishAndRemoveTask()
+        if (HudConfig.isRunning() && !isChangingConfigurations) finishAndRemoveTask()
     }
 
     override fun onDestroy() {
@@ -183,14 +186,14 @@ class MainActivity : Activity() {
         samplingHandler = Handler(samplingThread!!.looper)
         samplingHandler?.post {
             val fullScan = needsCatalog()
-            val previousCatalogIds = snapshotSignature(catalogSnapshot)
+            val previousCatalog = if (fullScan) catalogSnapshot else null
             val first = reader.sample(config, includeAllForSettings = fullScan)
             uiHandler.post {
-                if (!screenActive || HudConfig.isRunning(this)) return@post
+                if (!screenActive || HudConfig.isRunning()) return@post
                 snapshot = first
                 catalogSnapshot = first
                 fullCatalogLoaded = fullScan
-                if (fullScan && previousCatalogIds != snapshotSignature(first)) rebuildKeepingScroll() else updateValues()
+                if (fullScan && previousCatalog != null && !sameSensorIds(previousCatalog, first)) rebuildKeepingScroll() else updateValues()
                 samplingHandler?.removeCallbacks(poller)
                 samplingHandler?.postDelayed(poller, config.refreshMs.toLong())
             }
@@ -212,7 +215,7 @@ class MainActivity : Activity() {
     }
 
     private fun requestCatalogMode(enabled: Boolean) {
-        if (!HudConfig.isRunning(this)) {
+        if (!HudConfig.isRunning()) {
             if (enabled) scanCatalogLocally() else fullCatalogLoaded = false
             return
         }
@@ -234,25 +237,25 @@ class MainActivity : Activity() {
     }
 
     private fun scanCatalogLocally() {
-        if (!screenActive || HudConfig.isRunning(this)) return
+        if (!screenActive || HudConfig.isRunning()) return
         val handler = samplingHandler
         if (handler == null) {
             startSampler()
             return
         }
-        val previousCatalogIds = snapshotSignature(catalogSnapshot)
+        val previousCatalog = catalogSnapshot
         statusLine?.text = "Scanning all readable thermal sensors…"
         handler.removeCallbacks(poller)
         handler.post {
-            if (!screenActive || HudConfig.isRunning(this)) return@post
+            if (!screenActive || HudConfig.isRunning()) return@post
             val fresh = reader.sample(config, includeAllForSettings = true)
             handler.removeCallbacks(poller)
             uiHandler.post {
-                if (!screenActive || HudConfig.isRunning(this)) return@post
+                if (!screenActive || HudConfig.isRunning()) return@post
                 snapshot = fresh
                 catalogSnapshot = fresh
                 fullCatalogLoaded = true
-                if (previousCatalogIds != snapshotSignature(fresh)) rebuildKeepingScroll() else updateValues()
+                if (!sameSensorIds(previousCatalog, fresh)) rebuildKeepingScroll() else updateValues()
                 statusLine?.text = "Found ${fresh.allSensors.size} readable sensors."
             }
             handler.postDelayed(poller, config.refreshMs.toLong())
@@ -272,7 +275,7 @@ class MainActivity : Activity() {
             return
         }
         try {
-            HudConfig.setRunning(this, true)
+            HudConfig.setRunning(true)
             val intent = Intent(this, OverlayService::class.java).setAction(OverlayService.ACTION_START)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent) else startService(intent)
             statusLine?.text = "Overlay started."
@@ -280,7 +283,7 @@ class MainActivity : Activity() {
             statusView?.setTextColor(Ui.MINT)
             stopSampler()
         } catch (e: Exception) {
-            HudConfig.setRunning(this, false)
+            HudConfig.setRunning(false)
             statusLine?.text = "Could not start overlay: ${e.javaClass.simpleName}"
             statusView?.text = "READY"
         }
@@ -288,7 +291,7 @@ class MainActivity : Activity() {
 
     private fun stopOverlay() {
         stopService(Intent(this, OverlayService::class.java))
-        HudConfig.setRunning(this, false)
+        HudConfig.setRunning(false)
         statusView?.text = "READY"
         statusView?.setTextColor(Ui.MUTED)
         statusLine?.text = "Overlay stopped."
@@ -302,7 +305,7 @@ class MainActivity : Activity() {
             setBackgroundColor(Ui.BG)
             clipToPadding = false
             clipChildren = false
-            isFillViewport = false
+            isFillViewport = true
             isVerticalScrollBarEnabled = true
         }
         val column = LinearLayout(this).apply {
@@ -331,8 +334,8 @@ class MainActivity : Activity() {
         titleCol.addView(label("Temp HUD", 20f, Ui.WHITE, true))
         titleCol.addView(label("CPU & GPU TEMPERATURES", 10f, Ui.MUTED, false))
         header.addView(titleCol, LinearLayout.LayoutParams(0, -2, 1f))
-        statusView = label(if (HudConfig.isRunning(this)) "RUNNING" else "READY", 10f,
-            if (HudConfig.isRunning(this)) Ui.MINT else Ui.MUTED, true).apply {
+        statusView = label(if (HudConfig.isRunning()) "RUNNING" else "READY", 10f,
+            if (HudConfig.isRunning()) Ui.MINT else Ui.MUTED, true).apply {
             gravity = Gravity.CENTER; setPadding(dp(10), dp(7), dp(10), dp(7))
             background = rounded(Ui.PANEL, Ui.EDGE, 18)
         }
@@ -408,7 +411,7 @@ class MainActivity : Activity() {
     }
 
     private fun restartSamplerForNewInterval() {
-        if (screenActive && !HudConfig.isRunning(this)) {
+        if (screenActive && !HudConfig.isRunning()) {
             samplingHandler?.removeCallbacks(poller)
             samplingHandler?.postDelayed(poller, config.refreshMs.toLong())
         }
@@ -687,8 +690,13 @@ class MainActivity : Activity() {
         parent.addView(col, matchWrap())
     }
 
-    private fun snapshotSignature(value: TemperatureSnapshot): String =
-        value.allSensors.joinToString(separator = "|") { it.id }
+    private fun sameSensorIds(first: TemperatureSnapshot, second: TemperatureSnapshot): Boolean {
+        val a = first.allSensors
+        val b = second.allSensors
+        if (a.size != b.size) return false
+        for (index in a.indices) if (a[index].id != b[index].id) return false
+        return true
+    }
 
     private fun allSourceReadings(): List<ThermalReading> {
         val map = linkedMapOf<String, ThermalReading>()
@@ -708,13 +716,14 @@ class MainActivity : Activity() {
     }
 
     private fun compareBySourceName(): Comparator<String> = Comparator { a, b ->
-        fun number(value: String): Int = Regex("(?:CPU|GPU) (\\d+)").find(value)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 999
+        fun number(value: String): Int = SOURCE_INDEX_PATTERN.find(value)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 999
         val diff = number(a).compareTo(number(b))
         if (diff != 0) diff else a.compareTo(b)
     }
 
     private fun updateValues() {
-        val sources = allSourceReadings()
+        val needsSensorLookup = valueViews.keys.any { it.startsWith(HudConfig.SENSOR_PREFIX) }
+        val sources = if (needsSensorLookup) allSourceReadings() else emptyList()
         valueViews.forEach { (key, view) ->
             val reading = when (key) {
                 "cpuTemp" -> snapshot.cpuOverall
@@ -763,7 +772,11 @@ class MainActivity : Activity() {
         background = rounded(Ui.PANEL, Ui.EDGE, 14)
     }
 
-    private fun divider(): View = View(this).apply {
+    private fun divider(): View = object : View(this) {
+        override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+            setMeasuredDimension(View.MeasureSpec.getSize(widthMeasureSpec), dp(1))
+        }
+    }.apply {
         setBackgroundColor(Ui.EDGE)
         minimumHeight = dp(1)
     }

@@ -35,6 +35,9 @@ class OverlayService : Service() {
         const val ACTION_CATALOG = "com.tempoverlay.mangohud.CATALOG"
         const val EXTRA_CATALOG = "catalog_requested"
         const val EXTRA_CATALOG_COMPLETE = "catalog_complete"
+        @Volatile private var snapshotListenerActive = false
+        fun setSnapshotListenerActive(active: Boolean) { snapshotListenerActive = active }
+
         private const val CHANNEL = "temp_hud_monitor"
         private const val NOTIFICATION_ID = 101
         private const val ROW_HEIGHT_DP = 15.5f
@@ -60,12 +63,14 @@ class OverlayService : Service() {
             val config = HudConfig.load(this@OverlayService)
             val snapshot = sensorReader.sample(config, includeAllForSettings = catalogRequested)
             target.post { if (hudView === target) target.update(config, snapshot) }
-            sendBroadcast(
-                Intent(ACTION_SNAPSHOT)
-                    .setPackage(packageName)
-                    .putExtra(EXTRA_SNAPSHOT, snapshot.toJson())
-                    .putExtra(EXTRA_CATALOG_COMPLETE, catalogRequested)
-            )
+            if (snapshotListenerActive) {
+                sendBroadcast(
+                    Intent(ACTION_SNAPSHOT)
+                        .setPackage(packageName)
+                        .putExtra(EXTRA_SNAPSHOT, snapshot.toJson())
+                        .putExtra(EXTRA_CATALOG_COMPLETE, catalogRequested)
+                )
+            }
 
             val elapsedMs = SystemClock.uptimeMillis() - startedAt
             // Start-to-start timing avoids adding read duration to the selected interval.
@@ -120,7 +125,7 @@ class OverlayService : Service() {
 
         try {
             windowManager?.addView(view, params)
-            HudConfig.setRunning(this, true)
+            HudConfig.setRunning(true)
         } catch (_: Exception) {
             hudView = null
             stopSelf()
@@ -179,7 +184,7 @@ class OverlayService : Service() {
         pollingThread?.quitSafely()
         try { hudView?.let { windowManager?.removeView(it) } } catch (_: Exception) { }
         hudView = null
-        HudConfig.setRunning(this, false)
+        HudConfig.setRunning(false)
         super.onDestroy()
     }
 
