@@ -260,7 +260,7 @@ class MainActivity : Activity() {
             setPadding(dp(14), dp(10), dp(14), dp(18))
             setBackgroundColor(Ui.BG)
         }
-        scroll.addView(column)
+        scroll.addView(column, ScrollView.LayoutParams(-1, -2))
         scrollView = scroll
         setContentView(scroll)
 
@@ -292,7 +292,7 @@ class MainActivity : Activity() {
         addAverageSelector(column, "CPU average source", config.cpuAverageVariant, true)
         addAverageSelector(column, "GPU average source", config.gpuAverageVariant, false)
 
-        column.addView(divider(), matchWrap(top = 7, bottom = 7))
+        column.addView(divider(), dividerParams(top = 7, bottom = 7))
         addExpandableHeader(column, "CPU cores", coreCountLabel(), showCores, Ui.MINT) {
             showCores = !showCores
             rebuildKeepingScroll()
@@ -300,7 +300,7 @@ class MainActivity : Activity() {
         }
         if (showCores) buildSourceGroups(column, false)
 
-        column.addView(divider(), matchWrap(top = 7, bottom = 7))
+        column.addView(divider(), dividerParams(top = 7, bottom = 7))
         addExpandableHeader(column, "GPU cores", gpuCountLabel(), showGpuSources, Ui.BLUE) {
             showGpuSources = !showGpuSources
             rebuildKeepingScroll()
@@ -308,7 +308,7 @@ class MainActivity : Activity() {
         }
         if (showGpuSources) buildSourceGroups(column, true)
 
-        column.addView(divider(), matchWrap(top = 7, bottom = 7))
+        column.addView(divider(), dividerParams(top = 7, bottom = 7))
         addExpandableHeader(column, "Available sensors", "${allSourceReadings().size}", showAllSensors, Ui.MINT) {
             showAllSensors = !showAllSensors
             rebuildKeepingScroll()
@@ -316,7 +316,7 @@ class MainActivity : Activity() {
         }
         if (showAllSensors) buildAllSensors(column)
 
-        column.addView(divider(), matchWrap(top = 7, bottom = 7))
+        column.addView(divider(), dividerParams(top = 7, bottom = 7))
         addExpandableHeader(column, "Custom rows", "${config.customEntries.size}", showCustomEditor, Ui.MINT) {
             showCustomEditor = !showCustomEditor
             rebuildKeepingScroll()
@@ -324,7 +324,7 @@ class MainActivity : Activity() {
         }
         if (showCustomEditor) buildCustomRows(column)
 
-        column.addView(divider(), matchWrap(top = 7, bottom = 7))
+        column.addView(divider(), dividerParams(top = 7, bottom = 7))
         val refreshCard = card()
         addSlider(refreshCard, "Refresh interval", config.refreshMs, 500, 5000, 50,
             "0.50 s", "5.00 s", { String.format(Locale.US, "%.2f s", it / 1000f) }) {
@@ -685,7 +685,16 @@ class MainActivity : Activity() {
         background = rounded(Ui.PANEL, Ui.EDGE, 14)
     }
 
-    private fun divider(): View = View(this).apply { setBackgroundColor(Ui.EDGE) }
+    private fun divider(): View = View(this).apply {
+        setBackgroundColor(Ui.EDGE)
+        minimumHeight = dp(1)
+    }
+
+    private fun dividerParams(top: Int = 0, bottom: Int = 0): LinearLayout.LayoutParams =
+        LinearLayout.LayoutParams(-1, dp(1)).apply {
+            topMargin = dp(top)
+            bottomMargin = dp(bottom)
+        }
 
     private fun rounded(fill: Int, stroke: Int, radiusDp: Int): GradientDrawable =
         GradientDrawable().apply { setColor(fill); cornerRadius = dp(radiusDp).toFloat(); setStroke(dp(1), stroke) }
