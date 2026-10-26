@@ -599,6 +599,7 @@ class MainActivity : Activity() {
             minimumHeight = dp(36)
             setPadding(dp(7), 0, dp(7), 0)
         }
+        displayRow.addView(editButton, wrapWrap(start = 8))
         val toggleDisplay = {
             showDisplaySettings = !showDisplaySettings
             rebuildKeepingScroll()
