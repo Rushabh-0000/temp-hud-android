@@ -271,11 +271,6 @@ class SensorReader {
     private fun gpuIndex(type: String): Int? =
         GPU_INDEX_PATTERN.find(type)?.groupValues?.getOrNull(1)?.toIntOrNull()
 
-    private fun selectVariant(values: List<ZoneValue>, variant: String): List<ZoneValue> =
-        values.filter { value ->
-            SensorSourceLabels.sourceVariant(value.zone.type) == variant
-        }
-
     private fun average(values: List<ZoneValue>): Float? {
         if (values.isEmpty()) return null
         var total = 0.0
@@ -302,18 +297,6 @@ class SensorReader {
         }
     }
 
-    private fun deduplicatePairs(values: List<ZoneValue>): List<ZoneValue> =
-        values.groupBy { value ->
-            val type = value.zone.type
-            if (SensorSourceLabels.sourceVariant(type) != null) {
-                "paired:" + type.replace(SOURCE_VARIANT_SUFFIX_PATTERN, "")
-            } else {
-                type + ":" + value.zone.id
-            }
-        }.values.mapNotNull { group ->
-            group.maxWithOrNull(compareBy<ZoneValue> { sourcePreference(it.zone.type) }.thenBy { it.zone.id })
-        }.sortedBy { it.zone.id }
-
     private fun isCpuZone(type: String): Boolean = type.contains("cpu")
     private fun isGpuZone(type: String): Boolean = type.contains("gpu")
 
@@ -336,7 +319,6 @@ class SensorReader {
         try { file.readText().lineSequence().firstOrNull() } catch (_: Exception) { null }
 
     private companion object {
-        val SOURCE_VARIANT_SUFFIX_PATTERN = Regex("[-_]usr$", RegexOption.IGNORE_CASE)
         val QCOM_CORE_PATTERN = Regex("^cpu-([0-1])-([0-3])-usr$")
         val GENERIC_CORE_PATTERNS = listOf(
             Regex("^cpu-([0-7])-usr$"),
