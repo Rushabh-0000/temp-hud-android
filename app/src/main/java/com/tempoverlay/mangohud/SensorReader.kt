@@ -156,9 +156,9 @@ class SensorReader {
         values.filter { value ->
             val type = value.zone.type
             when {
-                type.endsWith("-usr") -> variant != "step"
+                type.endsWith("-usr") -> variant == "usr"
                 type.endsWith("-step") -> variant == "step"
-                else -> true
+                else -> false
             }
         }
 
