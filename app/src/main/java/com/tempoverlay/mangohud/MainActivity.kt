@@ -312,7 +312,7 @@ class MainActivity : Activity() {
         }
         column.minimumHeight = 0
         column.clipChildren = false
-        scroll.addView(column, ScrollView.LayoutParams(
+        scroll.addView(column, android.widget.FrameLayout.LayoutParams(
             android.view.ViewGroup.LayoutParams.MATCH_PARENT,
             android.view.ViewGroup.LayoutParams.WRAP_CONTENT
         ))
