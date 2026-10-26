@@ -1,6 +1,9 @@
 package com.tempoverlay.mangohud
 
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -105,7 +108,8 @@ private fun SettingsScreen() {
     val density = LocalDensity.current
     val safeTop = with(density) { WindowInsets.safeDrawing.getTop(this).toDp().value.toInt() }
     var config by remember { mutableStateOf(HudConfig.load(context)) }
-    var snapshot by remember { mutableStateOf(TemperatureSnapshot()) }
+    val snapshotState = remember { mutableStateOf(TemperatureSnapshot()) }
+    var snapshot by snapshotState
     var sensorCatalogSnapshot by remember { mutableStateOf(TemperatureSnapshot()) }
     var overlayActive by remember { mutableStateOf(HudConfig.isRunning(context)) }
     var screenResumed by remember { mutableStateOf(false) }
@@ -141,20 +145,53 @@ private fun SettingsScreen() {
 
     val reader = remember { SensorReader() }
     val latestConfig by rememberUpdatedState(config)
+    val snapshotReceiver = remember(context) {
+        object : BroadcastReceiver() {
+            override fun onReceive(receiverContext: Context, intent: Intent) {
+                if (intent.action != OverlayService.ACTION_SNAPSHOT) return
+                val raw = intent.getStringExtra(OverlayService.EXTRA_SNAPSHOT) ?: return
+                TemperatureSnapshot.fromJson(raw)?.let { snapshotState.value = it }
+                overlayActive = true
+            }
+        }
+    }
+
+    DisposableEffect(context, screenResumed, snapshotReceiver) {
+        if (!screenResumed) {
+            onDispose { }
+        } else {
+            val filter = IntentFilter(OverlayService.ACTION_SNAPSHOT)
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    context.registerReceiver(snapshotReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+                } else {
+                    @Suppress("DEPRECATION")
+                    context.registerReceiver(snapshotReceiver, filter)
+                }
+            } catch (_: Exception) { }
+            onDispose {
+                try { context.unregisterReceiver(snapshotReceiver) } catch (_: Exception) { }
+            }
+        }
+    }
+
     LaunchedEffect(reader, screenResumed, showAllSensors, showCustomEditor, showCores, showGpuSources) {
         if (!screenResumed) return@LaunchedEffect
         while (true) {
             val current = latestConfig
-            overlayActive = HudConfig.isRunning(context)
+            val serviceOwnsPolling = HudConfig.isRunning(context)
+            overlayActive = serviceOwnsPolling
             val needsCatalog = showAllSensors || showCustomEditor || showCores || showGpuSources
 
-            // This activity and the lightweight overlay service run in separate processes.
-            // Poll here only while the screen is visible; on pause this coroutine is cancelled.
-            val fresh = withContext(Dispatchers.IO) {
-                reader.sample(current, includeAllForSettings = needsCatalog)
+            // The separate overlay process broadcasts the exact sample while active.
+            // The UI samples only if the service is stopped, or a picker needs all zones.
+            if (!serviceOwnsPolling || needsCatalog) {
+                val fresh = withContext(Dispatchers.IO) {
+                    reader.sample(current, includeAllForSettings = needsCatalog)
+                }
+                if (needsCatalog) sensorCatalogSnapshot = fresh
+                if (!serviceOwnsPolling) snapshotState.value = fresh
             }
-            snapshot = fresh
-            if (needsCatalog) sensorCatalogSnapshot = fresh
             delay(current.refreshMs.toLong())
         }
     }

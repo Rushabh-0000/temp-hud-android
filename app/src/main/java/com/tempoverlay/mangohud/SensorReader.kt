@@ -1,5 +1,7 @@
 package com.tempoverlay.mangohud
 
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
 import java.util.Locale
 
@@ -16,6 +18,26 @@ data class TemperatureSnapshot(
     val gpuOverall: ThermalReading? = null,
     val allSensors: List<ThermalReading> = emptyList()
 ) {
+    fun toJson(): String {
+        fun encode(reading: ThermalReading?): Any = if (reading == null) JSONObject.NULL else JSONObject()
+            .put("id", reading.id)
+            .put("label", reading.label)
+            .put("celsius", reading.celsius?.toDouble() ?: JSONObject.NULL)
+            .put("sourceName", reading.sourceName)
+
+        val cores = JSONArray()
+        cpuCores.forEach { cores.put(encode(it)) }
+        val sensors = JSONArray()
+        allSensors.forEach { sensors.put(encode(it)) }
+        return JSONObject()
+            .put("format", 1)
+            .put("cpuOverall", encode(cpuOverall))
+            .put("cpuCores", cores)
+            .put("gpuOverall", encode(gpuOverall))
+            .put("allSensors", sensors)
+            .toString()
+    }
+
     fun readingFor(key: String): ThermalReading? = when {
         key == "cpuTemp" -> cpuOverall
         key == "gpuTemp" -> gpuOverall
@@ -24,6 +46,41 @@ data class TemperatureSnapshot(
         key.startsWith(HudConfig.SENSOR_PREFIX) ->
             allSensors.firstOrNull { it.id == key.removePrefix(HudConfig.SENSOR_PREFIX) }
         else -> null
+    }
+
+    companion object {
+        fun fromJson(raw: String): TemperatureSnapshot? = try {
+            val json = JSONObject(raw)
+            if (json.optInt("format", 0) != 1) return null
+
+            fun decode(value: Any?): ThermalReading? {
+                if (value == null || value === JSONObject.NULL || value !is JSONObject) return null
+                val temp = if (value.isNull("celsius")) null else value.optDouble("celsius").toFloat()
+                return ThermalReading(
+                    id = value.optString("id", ""),
+                    label = value.optString("label", ""),
+                    celsius = temp,
+                    sourceName = value.optString("sourceName", "")
+                )
+            }
+
+            val coreJson = json.optJSONArray("cpuCores") ?: JSONArray()
+            val cores = (0..7).map { index -> decode(coreJson.opt(index)) }
+            val sensorJson = json.optJSONArray("allSensors") ?: JSONArray()
+            val sensors = buildList {
+                for (index in 0 until sensorJson.length()) {
+                    decode(sensorJson.opt(index))?.let { add(it) }
+                }
+            }
+            TemperatureSnapshot(
+                cpuOverall = decode(json.opt("cpuOverall")),
+                cpuCores = cores,
+                gpuOverall = decode(json.opt("gpuOverall")),
+                allSensors = sensors
+            )
+        } catch (_: Exception) {
+            null
+        }
     }
 }
 

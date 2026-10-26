@@ -30,6 +30,8 @@ private data class OverlayRow(val label: String, val reading: ThermalReading?)
 class OverlayService : Service() {
     companion object {
         const val ACTION_START = "com.tempoverlay.mangohud.START"
+        const val ACTION_SNAPSHOT = "com.tempoverlay.mangohud.SNAPSHOT"
+        const val EXTRA_SNAPSHOT = "snapshot_json"
         private const val CHANNEL = "temp_hud_monitor"
         private const val NOTIFICATION_ID = 101
         private const val ROW_HEIGHT_DP = 15.5f
@@ -53,6 +55,11 @@ class OverlayService : Service() {
             val config = HudConfig.load(this@OverlayService)
             val snapshot = sensorReader.sample(config)
             target.post { if (hudView === target) target.update(config, snapshot) }
+            sendBroadcast(
+                Intent(ACTION_SNAPSHOT)
+                    .setPackage(packageName)
+                    .putExtra(EXTRA_SNAPSHOT, snapshot.toJson())
+            )
 
             val elapsedMs = SystemClock.uptimeMillis() - startedAt
             // Start-to-start timing avoids adding read duration to the selected interval.
