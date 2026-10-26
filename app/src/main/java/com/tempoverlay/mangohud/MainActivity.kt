@@ -40,15 +40,15 @@ import android.widget.TextView
 import java.util.Locale
 
 private object Ui {
-    const val BG = 0xFF080C11.toInt()
-    const val PANEL = 0xFF111922.toInt()
-    const val PANEL_ALT = 0xFF18232E.toInt()
-    const val MINT = 0xFF8CFFD0.toInt()
-    const val BLUE = 0xFF8FB5FF.toInt()
-    const val WHITE = 0xFFF0F4F8.toInt()
-    const val MUTED = 0xFF8D9BAA.toInt()
-    const val EDGE = 0xFF293643.toInt()
-    const val RED = 0xFFFF8888.toInt()
+    const val BG = 0xFF070D10.toInt()
+    const val PANEL = 0xFF101A1E.toInt()
+    const val PANEL_ALT = 0xFF17262A.toInt()
+    const val MINT = 0xFF50F58A.toInt()
+    const val BLUE = 0xFF62D7FF.toInt()
+    const val WHITE = 0xFFF2F7F6.toInt()
+    const val MUTED = 0xFF96AAAC.toInt()
+    const val EDGE = 0xFF26373B.toInt()
+    const val RED = 0xFFFF777F.toInt()
 }
 private val SOURCE_INDEX_PATTERN = Regex("(?:CPU|GPU) (\\d+)")
 private data class SourceOption(val reading: ThermalReading, val name: String, val variant: String)
@@ -401,7 +401,7 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL; setPadding(dp(10), 0, 0, 0)
         }
         titleCol.addView(label("Temp HUD", 20f, Ui.WHITE, true))
-        titleCol.addView(label("CPU & GPU TEMPERATURES", 10f, Ui.MUTED, false))
+        titleCol.addView(label("GAMEPLAY THERMAL MONITOR", 9f, Ui.MUTED, false))
         header.addView(titleCol, LinearLayout.LayoutParams(0, -2, 1f))
         statusView = label(if (HudConfig.isRunning()) "RUNNING" else "READY", 10f,
             if (HudConfig.isRunning()) Ui.MINT else Ui.MUTED, true).apply {
@@ -412,7 +412,7 @@ class MainActivity : Activity() {
         header.addView(statusView)
         column.addView(header)
 
-        column.addView(label("LIVE READINGS", 9f, Ui.MUTED, true).apply {
+        column.addView(label("TEMPERATURE SNAPSHOT", 9f, Ui.MUTED, true).apply {
             letterSpacing = 1.0f
             setPadding(dp(3), dp(3), 0, dp(5))
         }, matchWrap(top = 4))
@@ -426,7 +426,7 @@ class MainActivity : Activity() {
         val averageSources = card().apply {
             setPadding(dp(8), dp(5), dp(8), dp(5))
         }
-        averageSources.addView(label("AVERAGE SOURCE", 9f, Ui.MUTED, true).apply {
+        averageSources.addView(label("OVERALL SOURCE · EXACT VARIANT", 9f, Ui.MUTED, true).apply {
             letterSpacing = 0.8f
             setPadding(dp(4), dp(1), 0, dp(2))
         }, matchWrap())
@@ -434,7 +434,6 @@ class MainActivity : Activity() {
         addAverageSelector(averageSources, "GPU", config.gpuAverageVariant, false)
         column.addView(averageSources, matchWrap(top = 6))
 
-        column.addView(divider(), dividerParams(top = 7, bottom = 7))
         addExpandableHeader(column, "CPU cores", coreCountLabel(), showCores, Ui.MINT) {
             showCores = !showCores
             rebuildKeepingScroll()
@@ -442,7 +441,6 @@ class MainActivity : Activity() {
         }
         if (showCores) buildSourceGroups(column, false)
 
-        column.addView(divider(), dividerParams(top = 7, bottom = 7))
         addExpandableHeader(column, "GPU sources", gpuCountLabel(), showGpuSources, Ui.BLUE) {
             showGpuSources = !showGpuSources
             rebuildKeepingScroll()
@@ -450,7 +448,6 @@ class MainActivity : Activity() {
         }
         if (showGpuSources) buildSourceGroups(column, true)
 
-        column.addView(divider(), dividerParams(top = 7, bottom = 7))
         addExpandableHeader(column, "Available sensors", "${allSourceReadings().size}", showAllSensors, Ui.MINT) {
             showAllSensors = !showAllSensors
             rebuildKeepingScroll()
@@ -458,7 +455,6 @@ class MainActivity : Activity() {
         }
         if (showAllSensors) buildAllSensors(column)
 
-        column.addView(divider(), dividerParams(top = 7, bottom = 7))
         addExpandableHeader(column, "Custom rows", "${config.customEntries.size}", showCustomEditor, Ui.MINT) {
             showCustomEditor = !showCustomEditor
             rebuildKeepingScroll()
@@ -466,7 +462,6 @@ class MainActivity : Activity() {
         }
         if (showCustomEditor) buildCustomRows(column)
 
-        column.addView(divider(), dividerParams(top = 7, bottom = 7))
         val refreshCard = card()
         addSlider(refreshCard, "Refresh interval", config.refreshMs, 500, 3000, 10,
             "0.50 s", "3.00 s", { String.format(Locale.US, "%.2f s", it / 1000f) }) {
@@ -475,21 +470,21 @@ class MainActivity : Activity() {
         }
         column.addView(refreshCard, matchWrap())
 
-        column.addView(button(if (showDisplaySettings) "Hide display settings" else "Display settings", true).apply {
+        column.addView(button(if (showDisplaySettings) "Hide display settings" else "Display & position", true).apply {
             setOnClickListener { showDisplaySettings = !showDisplaySettings; rebuildKeepingScroll() }
         }, matchWrap(top = 8, bottom = 3))
         if (showDisplaySettings) buildDisplaySettings(column)
 
         val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        actions.addView(button("Apply / start", false).apply {
+        actions.addView(button("Apply & Start", false).apply {
             setOnClickListener { config.save(this@MainActivity); startOverlay() }
         }, LinearLayout.LayoutParams(0, dp(46), 1f).apply { marginEnd = dp(6) })
-        actions.addView(button("Stop", true).apply { setOnClickListener { stopOverlay() } },
+        actions.addView(button("Stop overlay", true).apply { setOnClickListener { stopOverlay() } },
             LinearLayout.LayoutParams(0, dp(46), 1f).apply { marginStart = dp(6) })
         column.addView(actions, matchWrap(top = 10))
         statusLine = label("", 11f, Ui.MINT, false).apply { setPadding(0, dp(8), 0, 0) }
         column.addView(statusLine)
-        column.addView(label("Android 11+ · local only · no analytics or updater", 10f, Ui.MUTED, false)
+        column.addView(label("Android 11+  ·  local only  ·  no analytics", 10f, Ui.MUTED, false)
             .apply { setPadding(0, dp(8), 0, 0) })
         updateValues()
     }
@@ -550,14 +545,39 @@ class MainActivity : Activity() {
     }
 
     private fun addExpandableHeader(parent: LinearLayout, title: String, count: String, expanded: Boolean, accent: Int, onClick: () -> Unit) {
-        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(3), dp(3), dp(1), dp(3)) }
-        row.addView(label(title, 13f, Ui.WHITE, true), LinearLayout.LayoutParams(0, dp(40), 1f))
-        row.addView(label(count, 10f, Ui.MUTED, false), wrapWrap(start = 5))
-        row.addView(button(if (expanded) "Hide" else "Edit", true, accent).apply {
-            setPadding(dp(8), 0, dp(8), 0); minHeight = dp(34); minimumHeight = dp(34)
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(10), dp(8), dp(8), dp(8))
+            background = rounded(Ui.PANEL, Ui.EDGE, 13)
+            clipToPadding = false
+        }
+        val accentMark = View(this).apply {
+            background = rounded(accent, accent, 3)
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }
+        row.addView(accentMark, LinearLayout.LayoutParams(dp(3), dp(32)).apply { marginEnd = dp(10) })
+        val copy = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        copy.addView(label(title, 13.5f, Ui.WHITE, true), matchWrap())
+        val description = when (title) {
+            "CPU cores" -> "Choose individual CPU usr / step readings"
+            "GPU sources" -> "Choose available GPU-labelled thermal zones"
+            "Available sensors" -> "Browse all readable thermal zones"
+            "Custom rows" -> "Add your own labels to selected sensors"
+            else -> "Temperature display settings"
+        }
+        copy.addView(label(description, 9.5f, Ui.MUTED, false).apply { setPadding(0, dp(3), 0, 0) }, matchWrap())
+        row.addView(copy, LinearLayout.LayoutParams(0, -2, 1f))
+        row.addView(label(count, 10f, accent, true).apply {
+            setPadding(dp(8), dp(5), dp(8), dp(5))
+            background = rounded(Ui.PANEL_ALT, Ui.EDGE, 12)
+        }, wrapWrap(start = 5, end = 5))
+        row.addView(button(if (expanded) "Done" else "Edit", true, accent).apply {
+            setPadding(dp(8), 0, dp(8), 0)
+            minHeight = dp(34); minimumHeight = dp(34)
             setOnClickListener { onClick() }
-        }, wrapWrap(start = 6))
-        parent.addView(row, matchWrap())
+        }, wrapWrap())
+        parent.addView(row, matchWrap(top = 7, bottom = 1))
     }
 
     private fun buildSourceGroups(parent: LinearLayout, isGpu: Boolean) {

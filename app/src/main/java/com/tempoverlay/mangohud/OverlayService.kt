@@ -60,9 +60,13 @@ class OverlayService : Service() {
             val target = hudView ?: return
             val handler = pollingHandler ?: return
             val startedAt = SystemClock.uptimeMillis()
-            val config = HudConfig.load(this@OverlayService)
-            val snapshot = sensorReader.sample(config, includeAllForSettings = catalogRequested)
-            target.post { if (hudView === target) target.update(config, snapshot) }
+            val sampleConfig = HudConfig.load(this@OverlayService)
+            val snapshot = sensorReader.sample(sampleConfig, includeAllForSettings = catalogRequested)
+            // A settings change may land while sysfs is being read. Never let a stale
+            // pre-read config re-apply an old lock/position after the user has locked the HUD.
+            target.post {
+                if (hudView === target) target.update(HudConfig.load(this@OverlayService), snapshot)
+            }
             if (snapshotListenerActive) {
                 sendBroadcast(
                     Intent(ACTION_SNAPSHOT)
@@ -246,32 +250,43 @@ class OverlayService : Service() {
 
         fun update(nextConfig: HudConfig, nextSnapshot: TemperatureSnapshot) {
             val previous = config
+            val params = hudWindowParams
+            val lockingNow = !previous.lockPosition && nextConfig.lockPosition
+
+            // Locking freezes the position currently visible on screen, not a possibly
+            // stale slider value from before the last drag. Persist that anchor once.
+            val effectiveConfig = if (lockingNow && params != null) {
+                nextConfig.copy(
+                    positionXDp = pxToDp(params.x).coerceAtLeast(0),
+                    positionYDp = pxToDp(params.y).coerceAtLeast(0)
+                ).also { it.save(this@OverlayService) }
+            } else nextConfig
+
             val previousRows = rows(previous, snapshot)
-            val nextRows = rows(nextConfig, nextSnapshot)
-            val layoutChanged = previous.scalePercent != nextConfig.scalePercent ||
+            val nextRows = rows(effectiveConfig, nextSnapshot)
+            val layoutChanged = previous.scalePercent != effectiveConfig.scalePercent ||
                 previousRows.map { it.label } != nextRows.map { it.label } ||
-                previous.textBrightness != nextConfig.textBrightness ||
-                previous.backgroundOpacity != nextConfig.backgroundOpacity
-            val positionChanged = previous.positionXDp != nextConfig.positionXDp || previous.positionYDp != nextConfig.positionYDp
-            val touchChanged = previous.lockPosition != nextConfig.lockPosition
-            config = nextConfig
+                previous.textBrightness != effectiveConfig.textBrightness ||
+                previous.backgroundOpacity != effectiveConfig.backgroundOpacity
+            val positionChanged = previous.positionXDp != effectiveConfig.positionXDp ||
+                previous.positionYDp != effectiveConfig.positionYDp
+            val touchChanged = previous.lockPosition != effectiveConfig.lockPosition
+            config = effectiveConfig
             snapshot = nextSnapshot
             if (layoutChanged) requestLayout()
 
-            val params = hudWindowParams
             if (params != null) {
-                var needUpdate = layoutChanged || positionChanged || touchChanged
+                val needUpdate = layoutChanged || positionChanged || touchChanged
                 params.width = WindowManager.LayoutParams.WRAP_CONTENT
                 params.height = WindowManager.LayoutParams.WRAP_CONTENT
-                // Keep the visual opacity identical for locked and unlocked states.
-                params.alpha = overlayWindowAlpha(nextConfig.lockPosition)
+                params.alpha = overlayWindowAlpha(effectiveConfig.lockPosition)
                 this.alpha = 1f
-                if (touchChanged) {
-                    params.flags = makeFlags(nextConfig.lockPosition)
-                }
-                if (positionChanged) {
-                    params.x = dp(nextConfig.positionXDp.toFloat()).coerceIn(0, maxX())
-                    params.y = maxOf(dp(nextConfig.positionYDp.toFloat()), safeTopPx() + dp(4f))
+                if (touchChanged) params.flags = makeFlags(effectiveConfig.lockPosition)
+                // When lock turns on, keep params.x/y exactly as they are. A deliberate
+                // position-slider change is still applied in later locked updates.
+                if (positionChanged && !lockingNow) {
+                    params.x = dp(effectiveConfig.positionXDp.toFloat()).coerceIn(0, maxX())
+                    params.y = maxOf(dp(effectiveConfig.positionYDp.toFloat()), safeTopPx() + dp(4f))
                 }
                 if (needUpdate) {
                     try { windowManager?.updateViewLayout(this, params) } catch (_: Exception) { }

@@ -1,6 +1,6 @@
 # Temp HUD
 
-Current development version: **0.7.8**.
+Current development version: **0.7.9**.
 
 Compact MangoHud-inspired Android temperature overlay for Android 11+, written in Kotlin using Android's built-in Material-themed Views to keep the APK lean.
 
@@ -17,8 +17,9 @@ Compact MangoHud-inspired Android temperature overlay for Android 11+, written i
 - These are thermal-zone readings exposed by the phone firmware, not guaranteed physical GPU-core sensors. If firmware exposes no suitable sensor, the app shows N/A.
 - Any readable thermal-zone sensor can be selected from Browse, and custom rows can pair a custom label with any selected temperature sensor.
 
-## UI and floating-window fixes in 0.7.8
-- The settings screen remains a native View hierarchy in a vertical ScrollView whose only content child uses WRAP_CONTENT height and no viewport fill, weight, or fixed-height panel. Dividers are normal one-pixel Views. Multi-window/configuration callbacks reassert natural content measurement, and expanded sections, sensor search, and scroll position now survive Activity recreation.
+## UI refresh and locked-position fix in 0.7.9
+- The settings screen remains a native View hierarchy in a vertical ScrollView with natural WRAP_CONTENT content height. Section cards now use a clearer title/description/count hierarchy, a refreshed green/cyan palette, and better spacing. Expanded sections, sensor search, and scroll position survive Activity recreation.
+- The lock toggle now pins the overlay at its current on-screen coordinates and persists that anchor. Overlay samples re-read the latest config before updating the view so an old in-flight sensor sample cannot restore a stale lock or position after the user changes settings.
 - The settings header uses the app launcher icon; live readings and CPU/GPU average-source selection are grouped into distinct compact cards. Buttons provide touch ripple feedback. The interface remains built with native Android Views to avoid adding Compose runtime size.
 
 ## Layout, sensor and low-allocation fixes in 0.7.5
