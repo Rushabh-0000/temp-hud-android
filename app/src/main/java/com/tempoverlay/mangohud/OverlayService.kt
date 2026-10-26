@@ -309,7 +309,7 @@ class OverlayService : Service() {
         private fun maxY(): Int = (resources.displayMetrics.heightPixels - height).coerceAtLeast(safeTopPx())
 
         private fun valueText(row: OverlayRow): String =
-            row.reading?.celsius?.let { String.format(Locale.US, "%.0f°C", it) } ?: "N/A"
+            row.reading?.celsius?.let { String.format(Locale.US, "%.1f°C", it) } ?: "N/A"
 
         private fun configureTextPaint(size: Float) {
             textPaint.textSize = u(size).toFloat()

@@ -375,8 +375,9 @@ class MainActivity : Activity() {
 
     private fun updateSensorRows() {
         val readingsById = catalogReadings.associateBy { it.id }
+        val liveReadingsById = snapshot.allSensors.associateBy { it.id }
         sensorRows.forEach { (id, views) ->
-            val reading = readingsById[id]
+            val reading = liveReadingsById[id] ?: readingsById[id]
             views.second.text = formatTemp(reading)
             views.second.setTextColor(temperatureColor(reading))
             styleSensorRow(views.first, config.selectedThermalSensors.contains(id))
@@ -479,8 +480,9 @@ class MainActivity : Activity() {
 
     private fun updateCustomRows() {
         val sourceMap = catalogReadings.associateBy { it.id }
+        val liveReadingsById = snapshot.allSensors.associateBy { it.id }
         customValueViews.forEach { (_, pair) ->
-            val reading = sourceMap[pair.second]
+            val reading = liveReadingsById[pair.second] ?: sourceMap[pair.second]
             pair.first.text = formatTemp(reading)
             pair.first.setTextColor(temperatureColor(reading))
         }
@@ -767,7 +769,7 @@ class MainActivity : Activity() {
     }
 
     private fun formatTemp(reading: ThermalReading?): String =
-        reading?.celsius?.let { String.format(Locale.US, "%.0f°C", it) } ?: "—"
+        reading?.celsius?.let { String.format(Locale.US, "%.1f°C", it) } ?: "—"
 
     private fun temperatureColor(reading: ThermalReading?): Int =
         reading?.celsius?.let { HudPalette.heatColor(it, config.textBrightness) } ?: V2Colors.MUTED

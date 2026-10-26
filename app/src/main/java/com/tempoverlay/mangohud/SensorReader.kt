@@ -130,8 +130,7 @@ class SensorReader {
                     ?.mapNotNull { directory ->
                         val type = readText(File(directory, "type"))?.trim()?.lowercase(Locale.US)
                         if (type.isNullOrEmpty() ||
-                            !directory.name.removePrefix("thermal_zone").all { it.isDigit() } ||
-                            !type.endsWith("-usr") || type.endsWith("-step")) {
+                            !directory.name.removePrefix("thermal_zone").all { it.isDigit() }) {
                             null
                         } else ThermalZone(directory, type)
                     }?.sortedBy { it.id.removePrefix("thermal_zone").toIntOrNull() ?: Int.MAX_VALUE }
@@ -146,14 +145,11 @@ class SensorReader {
         val zones = catalog()
         val selectedIds = config.selectedThermalSensors
         val customIds = config.customEntries.mapTo(HashSet()) { it.sensorId }
-        // Keep tile previews live even when a tile is gray; other sources are sampled only
-        // for the catalogue refresh or when selected for a custom/extra overlay row.
-        val readCpu = true
-        val readGpu = true
+        // Built-in CPU/GPU/core blocks read only -usr sources.
+        // The All sensors catalogue and custom/picked rows are deliberately unfiltered.
         val toRead = if (includeAllForSettings) zones else zones.filter { zone ->
             zone.id in selectedIds || zone.id in customIds ||
-                (readCpu && isCpuZone(zone.type)) ||
-                (readGpu && isGpuZone(zone.type))
+                (isUsrZone(zone.type) && (isCpuZone(zone.type) || isGpuZone(zone.type)))
         }
 
         val values = toRead.mapNotNull(::readTemperature)
@@ -162,8 +158,8 @@ class SensorReader {
             valuesById[zone.id]?.asReading()
                 ?: ThermalReading(zone.id, zone.type, null, zone.sourceName)
         }
-        val cpuValues = values.filter { isCpuZone(it.zone.type) }
-        val gpuValues = values.filter { isGpuZone(it.zone.type) }
+        val cpuValues = values.filter { isUsrZone(it.zone.type) && isCpuZone(it.zone.type) }
+        val gpuValues = values.filter { isUsrZone(it.zone.type) && isGpuZone(it.zone.type) }
 
         val cpuEco = clusterReading("cpuss-0-usr", "CPU Eco Cluster", "cpuEcoCluster", 0..3, cpuValues)
         val cpuPerf = clusterReading("cpuss-1-usr", "CPU Perf Cluster", "cpuPerfCluster", 4..7, cpuValues)
@@ -323,6 +319,9 @@ class SensorReader {
             }
         }
     }
+
+    private fun isUsrZone(type: String): Boolean =
+        type.endsWith("-usr") && !type.endsWith("-step")
 
     private fun isCpuZone(type: String): Boolean = type.contains("cpu")
     private fun isGpuZone(type: String): Boolean = type.contains("gpu")
