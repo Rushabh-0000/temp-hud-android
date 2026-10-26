@@ -150,12 +150,12 @@ class MainActivity : Activity() {
                 receiverRegistered = true
             } catch (_: Exception) { }
         }
-        OverlayService.setSnapshotListenerActive(receiverRegistered)
     }
 
     override fun onResume() {
         super.onResume()
         screenActive = true
+        OverlayService.setSnapshotListenerActive(receiverRegistered)
         config = HudConfig.load(this)
         if (HudConfig.isRunning()) {
             requestCatalogOnce()
@@ -169,6 +169,9 @@ class MainActivity : Activity() {
 
     override fun onPause() {
         screenActive = false
+        // The Activity may be paused without reaching onStop in floating/multi-window mode.
+        // Stop preview broadcasts immediately so hidden UI work stays near zero.
+        OverlayService.setSnapshotListenerActive(false)
         stopSampler()
         requestCatalogMode(false)
         super.onPause()

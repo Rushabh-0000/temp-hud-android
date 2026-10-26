@@ -121,6 +121,7 @@ class SensorReader {
                 (readGpu && isGpuZone(zone.type))
         }
         val values = toRead.mapNotNull(::readTemperature)
+        val valuesById = values.associateBy { it.zone.id }
         val cpuValues = values.filter { isCpuZone(it.zone.type) }
         val gpuValues = values.filter { isGpuZone(it.zone.type) }
         val selectedCpuValues = selectVariant(cpuValues, config.cpuAverageVariant)
@@ -150,7 +151,7 @@ class SensorReader {
                     else uniqueGpu.joinToString { it.sourceName }
             ) else null,
             allSensors = toRead.map { zone ->
-                values.firstOrNull { it.zone.id == zone.id }?.asReading()
+                valuesById[zone.id]?.asReading()
                     ?: ThermalReading(zone.id, zone.type, null, zone.sourceName)
             }
         )
