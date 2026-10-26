@@ -816,12 +816,15 @@ class MainActivity : Activity() {
 
     private fun styleSensorRow(row: LinearLayout, active: Boolean, reading: ThermalReading?) {
         val temperature = reading?.celsius
-        val heat = temperature?.let { HudPalette.heatColor(it, 100) }
+        // Keep cards neutral below the same 80°C threshold used for the value text/overlay.
+        val heat = temperature
+            ?.takeIf { HudPalette.isHeatColored(it) }
+            ?.let { HudPalette.heatColor(it, 100) }
         val heatTinted = heat?.let { mixColor(V2Colors.CARD, it, 0.15f) } ?: V2Colors.CARD
         val fill = if (active) mixColor(heatTinted, V2Colors.GREEN, 0.10f) else heatTinted
         val stroke = when {
             active -> V2Colors.GREEN
-            temperature != null && temperature >= 55f && heat != null -> mixColor(V2Colors.EDGE, heat, 0.55f)
+            heat != null -> mixColor(V2Colors.EDGE, heat, 0.55f)
             else -> V2Colors.EDGE
         }
         row.background = rounded(fill, stroke, if (active) 2 else 1, 12)

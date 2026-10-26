@@ -8,7 +8,7 @@ The root app is a clean rebuild. Original Version 1 source and project files rem
 - Grey CPU, GPU and CPU 0–7 tiles toggle their overlay rows; active tiles glow green.
 - Overlay starts automatically when any metric, sensor row or custom row is enabled, and stops when nothing remains selected.
 - CPU averages cpuss-0-usr and cpuss-1-usr. GPU averages gpuss-0-usr and gpuss-1-usr. Individual CPU 0–7 tiles map to cpu-1-0-usr through cpu-1-7-usr; cpu-0-0-usr through cpu-0-3-usr stay selectable as separate thermal inputs, not extra cores. Built-in tiles use -usr sources; All sensors retains every discovered type including -step.
-- All sensors uses a two-column grid of heat-tinted cards; temperatures progress from green to yellow/orange/red as they rise. When expanded, every discovered sensor is polled live; collapsing the section stops the extra catalogue polling. Tap a card to toggle that source onto the overlay.
+- All sensors uses a two-column grid of cards. Both card tint and temperature text remain neutral below about 80°C, then progress from yellow at 80°C to orange around 85°C and red at 90°C; the overlay uses the same threshold and palette. When expanded, every discovered sensor is polled live; collapsing the section stops the extra catalogue polling. Tap a card to toggle that source onto the overlay.
 - Pause overlay hides and stops the overlay without clearing selected rows; Resume restores the previous selection. The first install stays off until a row is selected.
 - Custom rows let a selected source be displayed under a user-defined name.
 - Overlay settings are at the bottom: refresh interval, scale, text brightness, background opacity, position and lock.

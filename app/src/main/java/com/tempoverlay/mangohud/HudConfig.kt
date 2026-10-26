@@ -146,18 +146,22 @@ data class HudConfig(
 
 object HudPalette {
     private const val WHITE = 0xFFF8FAFC.toInt()
+    const val COLOR_START_C = 80f
+
+    // Match the DevCheck-style thermal threshold: stay neutral below ~80°C,
+    // then progress from yellow to orange and red as temperature rises.
     private val HEAT_STOPS = listOf(
-        35f to 0xFF44E879.toInt(),
-        45f to 0xFF8FE85A.toInt(),
-        55f to 0xFFD7E84D.toInt(),
-        65f to 0xFFFFD34F.toInt(),
-        75f to 0xFFFF8B45.toInt(),
-        85f to 0xFFFF414B.toInt()
+        80f to 0xFFFFD34F.toInt(),
+        85f to 0xFFFF8B45.toInt(),
+        90f to 0xFFFF414B.toInt()
     )
 
     fun labelColor(brightness: Int): Int = applyBrightness(WHITE, brightness)
 
+    fun isHeatColored(celsius: Float): Boolean = celsius >= COLOR_START_C
+
     fun heatColor(celsius: Float, brightness: Int): Int {
+        if (celsius < COLOR_START_C) return applyBrightness(WHITE, brightness)
         val stops = HEAT_STOPS
         if (celsius <= stops.first().first) return applyBrightness(stops.first().second, brightness)
         if (celsius >= stops.last().first) return applyBrightness(stops.last().second, brightness)
