@@ -1,6 +1,6 @@
 # Temp HUD
 
-Current development version: **0.7.15**.
+Current development version: **0.7.16**.
 
 Compact MangoHud-inspired Android temperature overlay for Android 11+, written in Kotlin using Android's built-in Material-themed Views to keep the APK lean.
 

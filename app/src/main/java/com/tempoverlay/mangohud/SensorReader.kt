@@ -175,14 +175,27 @@ class SensorReader {
             alreadyUsedSources = setOfNotNull(gpu1?.sourceName)
         )
 
-        val cpuTotal = averageReadings(listOfNotNull(cpuEco, cpuPerf))
-            ?: average(cpuValues)?.let {
-                ThermalReading("cpuTemp", "CPU", it, "Fallback average of active CPU -usr sensors")
-            }
-        val gpuTotal = averageReadings(listOfNotNull(gpu1, gpu2))
-            ?: average(gpuValues)?.let {
-                ThermalReading("gpuTemp", "GPU", it, "Fallback average of active GPU -usr sensors")
-            }
+        val cpuClusterReadings = listOfNotNull(cpuEco, cpuPerf)
+        val cpuTotal = averageReadings(cpuClusterReadings)?.let { mean ->
+            ThermalReading(
+                "cpuTemp", "CPU", mean,
+                if (cpuClusterReadings.isEmpty()) "Fallback average of active CPU -usr sensors"
+                else cpuClusterReadings.joinToString { it.sourceName }
+            )
+        } ?: average(cpuValues)?.let {
+            ThermalReading("cpuTemp", "CPU", it, "Fallback average of active CPU -usr sensors")
+        }
+
+        val gpuReadings = listOfNotNull(gpu1, gpu2)
+        val gpuTotal = averageReadings(gpuReadings)?.let { mean ->
+            ThermalReading(
+                "gpuTemp", "GPU", mean,
+                if (gpuReadings.isEmpty()) "Fallback average of active GPU -usr sensors"
+                else gpuReadings.joinToString { it.sourceName }
+            )
+        } ?: average(gpuValues)?.let {
+            ThermalReading("gpuTemp", "GPU", it, "Fallback average of active GPU -usr sensors")
+        }
 
         return TemperatureSnapshot(
             cpuOverall = cpuTotal?.copy(id = "cpuTemp", label = "CPU"),
