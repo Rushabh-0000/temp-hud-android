@@ -41,7 +41,7 @@ private object V2Colors {
     const val MUTED = 0xFF92999F.toInt()
 }
 
-private data class MetricTile(val card: LinearLayout, val name: TextView, val value: TextView)
+private data class MetricTile(val card: LinearLayout, val name: TextView, val value: TextView, val source: TextView)
 
 class MainActivity : Activity() {
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -58,6 +58,9 @@ class MainActivity : Activity() {
     private val sensorRows = linkedMapOf<String, Pair<LinearLayout, TextView>>()
     private val customValueViews = linkedMapOf<String, Pair<TextView, String>>()
     private var sensorListContainer: LinearLayout? = null
+    private var sensorSectionTitle: TextView? = null
+    private var sensorRefreshButton: TextView? = null
+    private var sensorsExpanded = false
     private var customRowsContainer: LinearLayout? = null
     private var customNameInput: EditText? = null
     private var customSensorSpinner: Spinner? = null
@@ -75,6 +78,7 @@ class MainActivity : Activity() {
                 catalogReadings = fresh.allSensors
                 if (idsChanged) rebuildSensorRows() else updateSensorRows()
                 updateCustomSensorSpinner()
+                requestCatalogMode(false)
             }
             updateLiveValues()
         }
@@ -85,19 +89,16 @@ class MainActivity : Activity() {
             val worker = samplingHandler ?: return
             if (!screenActive || HudConfig.isRunning()) return
             val cfg = config
+            // Live tile sampling only; the full catalogue is refreshed manually.
             val fresh = try {
-                reader.sample(cfg, includeAllForSettings = true)
+                reader.sample(cfg, includeAllForSettings = false)
             } catch (_: Exception) {
                 TemperatureSnapshot()
             }
             if (!screenActive || HudConfig.isRunning() || samplingHandler !== worker) return
             mainHandler.post {
                 if (!screenActive || HudConfig.isRunning()) return@post
-                val idsChanged = catalogReadings.map { it.id } != fresh.allSensors.map { it.id }
                 snapshot = fresh
-                catalogReadings = fresh.allSensors
-                if (idsChanged) rebuildSensorRows() else updateSensorRows()
-                updateCustomSensorSpinner()
                 updateLiveValues()
             }
             if (screenActive && !HudConfig.isRunning() && samplingHandler === worker) {
@@ -264,9 +265,19 @@ class MainActivity : Activity() {
             maxLines = 1
             setPadding(0, dp(5), 0, 0)
         }
+        val source = TextView(this).apply {
+            textSize = 8f
+            typeface = Typeface.create("sans-serif", Typeface.NORMAL)
+            setTextColor(V2Colors.MUTED)
+            includeFontPadding = false
+            maxLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setPadding(0, dp(3), 0, 0)
+        }
         card.addView(name, LinearLayout.LayoutParams(-1, -2))
         card.addView(value, LinearLayout.LayoutParams(-1, -2))
-        val tile = MetricTile(card, name, value)
+        card.addView(source, LinearLayout.LayoutParams(-1, -2))
+        val tile = MetricTile(card, name, value, source)
         tileWidgets[key] = tile
         card.setOnClickListener {
             val enable = !isMetricActive(key)
@@ -282,17 +293,39 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(2), dp(12), dp(2), dp(7))
+            isClickable = true
+            isFocusable = true
         }
-        header.addView(sectionLabel("All sensors"), LinearLayout.LayoutParams(0, -2, 1f))
-        header.addView(smallButton("Refresh").apply {
+        sensorSectionTitle = sectionLabel("All sensors  ▸").apply {
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        header.addView(sensorSectionTitle, LinearLayout.LayoutParams(0, dp(38), 1f))
+        sensorRefreshButton = smallButton("Refresh").apply {
+            visibility = View.GONE
             setOnClickListener { refreshSensors() }
-        }, wrapWrap())
+        }
+        header.addView(sensorRefreshButton, wrapWrap())
+        header.setOnClickListener {
+            sensorsExpanded = !sensorsExpanded
+            updateSensorSectionVisibility()
+            if (sensorsExpanded) refreshSensors()
+        }
         parent.addView(header, matchWrap())
 
-        val sensorBox = panel().apply { setPadding(dp(6), dp(5), dp(6), dp(5)) }
+        val sensorBox = panel().apply {
+            setPadding(dp(6), dp(5), dp(6), dp(5))
+            visibility = View.GONE
+        }
         sensorListContainer = sensorBox
         parent.addView(sensorBox, matchWrap(bottom = 6))
         rebuildSensorRows()
+        updateSensorSectionVisibility()
+    }
+
+    private fun updateSensorSectionVisibility() {
+        sensorListContainer?.visibility = if (sensorsExpanded) View.VISIBLE else View.GONE
+        sensorRefreshButton?.visibility = if (sensorsExpanded) View.VISIBLE else View.GONE
+        sensorSectionTitle?.text = if (sensorsExpanded) "All sensors  ▾" else "All sensors  ▸"
     }
 
     private fun rebuildSensorRows() {
@@ -309,7 +342,7 @@ class MainActivity : Activity() {
                 isFocusable = true
             }
             val name = TextView(this).apply {
-                text = reading.label
+                text = reading.sourceName
                 textSize = 11f
                 includeFontPadding = false
                 maxLines = 1
@@ -371,7 +404,10 @@ class MainActivity : Activity() {
         }
         val spinner = Spinner(this).apply { setPadding(dp(4), 0, dp(4), 0) }
         customSensorSpinner = spinner
-        chooserRow.addView(spinner, LinearLayout.LayoutParams(0, dp(43), 1f).apply { marginEnd = dp(7) })
+        chooserRow.addView(spinner, LinearLayout.LayoutParams(0, dp(43), 1f).apply { marginEnd = dp(5) })
+        chooserRow.addView(smallButton("Refresh").apply {
+            setOnClickListener { refreshSensors() }
+        }, wrapWrap(end = 5))
         chooserRow.addView(smallButton("Add").apply {
             setOnClickListener { addCustomRow() }
         }, wrapWrap())
@@ -452,7 +488,7 @@ class MainActivity : Activity() {
     private fun updateCustomSensorSpinner() {
         val spinner = customSensorSpinner ?: return
         val wantedId = lastCustomSensorId ?: catalogReadings.getOrNull(spinner.selectedItemPosition)?.id
-        val labels = catalogReadings.map { "${it.label} · ${it.id}" }
+        val labels = catalogReadings.map { it.sourceName }
         spinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, labels).apply {
             setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         }
@@ -702,6 +738,8 @@ class MainActivity : Activity() {
         tile.name.text = metricLabel(key)
         tile.value.text = formatTemp(reading)
         tile.value.setTextColor(temperatureColor(reading))
+        tile.source.text = reading?.sourceName?.replace(", ", "\n") ?: "No readable -usr source"
+        tile.source.setTextColor(if (reading == null) V2Colors.MUTED else 0xFFADB6BD.toInt())
     }
 
     private fun styleTile(tile: MetricTile, active: Boolean) {

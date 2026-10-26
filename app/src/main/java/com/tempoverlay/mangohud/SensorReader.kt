@@ -146,8 +146,10 @@ class SensorReader {
         val zones = catalog()
         val selectedIds = config.selectedThermalSensors
         val customIds = config.customEntries.mapTo(HashSet()) { it.sensorId }
-        val readCpu = includeAllForSettings || config.showCpuTemp || config.selectedCpuCores.isNotEmpty()
-        val readGpu = includeAllForSettings || config.showGpuTemp
+        // Keep tile previews live even when a tile is gray; other sources are sampled only
+        // for the catalogue refresh or when selected for a custom/extra overlay row.
+        val readCpu = true
+        val readGpu = true
         val toRead = if (includeAllForSettings) zones else zones.filter { zone ->
             zone.id in selectedIds || zone.id in customIds ||
                 (readCpu && isCpuZone(zone.type)) ||
