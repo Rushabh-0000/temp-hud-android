@@ -144,11 +144,9 @@ class SensorReader {
     fun sample(config: HudConfig, includeAllForSettings: Boolean = false): TemperatureSnapshot {
         val zones = catalog()
         val selectedIds = config.selectedThermalSensors
-        val customIds = config.customEntries.mapTo(HashSet()) { it.sensorId }
-        // Built-in CPU/GPU/core blocks read only -usr sources.
-        // The All sensors catalogue and custom/picked rows are deliberately unfiltered.
+        // Built-in CPU/GPU/core blocks read only -usr sources; selected sources can be any type.
         val toRead = if (includeAllForSettings) zones else zones.filter { zone ->
-            zone.id in selectedIds || zone.id in customIds ||
+            zone.id in selectedIds ||
                 (isUsrZone(zone.type) && (isCpuZone(zone.type) || isGpuZone(zone.type)))
         }
 

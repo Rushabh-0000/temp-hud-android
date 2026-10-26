@@ -1,6 +1,7 @@
 package com.tempoverlay.mangohud
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -20,12 +21,10 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
-import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
-import android.widget.Spinner
 import android.widget.Switch
 import android.widget.TextView
 import java.util.Locale
@@ -56,17 +55,12 @@ class MainActivity : Activity() {
 
     private val tileWidgets = linkedMapOf<String, MetricTile>()
     private val sensorRows = linkedMapOf<String, Pair<LinearLayout, TextView>>()
-    private val customValueViews = linkedMapOf<String, Pair<TextView, String>>()
     private var sensorListContainer: LinearLayout? = null
     private var sensorSectionTitle: TextView? = null
     private var sensorRefreshButton: TextView? = null
     private var overlayControlButton: TextView? = null
     private var overlayControlStatus: TextView? = null
     @Volatile private var sensorsExpanded = false
-    private var customRowsContainer: LinearLayout? = null
-    private var customNameInput: EditText? = null
-    private var customSensorSpinner: Spinner? = null
-    private var lastCustomSensorId: String? = null
 
     private val snapshotReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -222,7 +216,6 @@ class MainActivity : Activity() {
         }
 
         buildSensorSection(content)
-        buildCustomSection(content)
         buildSettingsSection(content)
 
         scroll.addView(content, android.widget.FrameLayout.LayoutParams(
@@ -413,6 +406,10 @@ class MainActivity : Activity() {
                     saveConfig(config.withMetric(HudConfig.SENSOR_PREFIX + reading.id, enabled),
                         requestPermission = enabled)
                 }
+                card.setOnLongClickListener {
+                    showSensorNameDialog(reading)
+                    true
+                }
                 gridRow.addView(card, LinearLayout.LayoutParams(0, dp(68), 1f).apply {
                     if (index == 0) marginEnd = dp(5) else marginStart = dp(5)
                 })
@@ -427,7 +424,6 @@ class MainActivity : Activity() {
             })
         }
         updateSensorRows()
-        updateCustomSensorSpinner()
     }
 
     private fun updateSensorRows() {
@@ -441,125 +437,45 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun buildCustomSection(parent: LinearLayout) {
-        parent.addView(sectionLabel("Custom row"), matchWrap(top = 15, bottom = 7))
-        val box = panel().apply { setPadding(dp(9), dp(9), dp(9), dp(8)) }
-        val name = EditText(this).apply {
-            hint = "Custom name"
-            isSingleLine = true
-            textSize = 12f
+    private fun showSensorNameDialog(reading: ThermalReading) {
+        val defaultName = SensorSourceLabels.overlayLabel(reading)
+        val currentName = config.sensorOverlayNames[reading.id] ?: defaultName
+        val input = EditText(this).apply {
+            setSingleLine(true)
+            textSize = 14f
             setTextColor(V2Colors.WHITE)
             setHintTextColor(V2Colors.MUTED)
+            hint = defaultName
+            setText(currentName)
+            setSelection(text.length)
             inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
             background = rounded(0xFF0D1013.toInt(), V2Colors.EDGE, 1, 9)
-            setPadding(dp(10), dp(4), dp(10), dp(4))
+            setPadding(dp(12), dp(10), dp(12), dp(10))
         }
-        customNameInput = name
-        box.addView(name, LinearLayout.LayoutParams(-1, dp(43)).apply { bottomMargin = dp(7) })
-
-        val chooserRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        val spinner = Spinner(this).apply { setPadding(dp(4), 0, dp(4), 0) }
-        customSensorSpinner = spinner
-        chooserRow.addView(spinner, LinearLayout.LayoutParams(0, dp(43), 1f).apply { marginEnd = dp(5) })
-        chooserRow.addView(smallButton("Refresh").apply {
-            setOnClickListener { refreshSensors() }
-        }, wrapWrap(end = 5))
-        chooserRow.addView(smallButton("Add").apply {
-            setOnClickListener { addCustomRow() }
-        }, wrapWrap())
-        box.addView(chooserRow, matchWrap())
-        val customRows = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(5), 0, 0)
-        }
-        customRowsContainer = customRows
-        box.addView(customRows, matchWrap())
-        parent.addView(box, matchWrap(bottom = 6))
-        updateCustomSensorSpinner()
-        rebuildCustomRows()
-    }
-
-    private fun addCustomRow() {
-        val index = customSensorSpinner?.selectedItemPosition ?: -1
-        val reading = catalogReadings.getOrNull(index) ?: return
-        val label = customNameInput?.text?.toString()?.trim().orEmpty().ifBlank { reading.label }
-        val next = config.copy(customEntries = config.customEntries + CustomHudEntry(
-            label = label,
-            sensorId = reading.id
-        ))
-        customNameInput?.setText("")
-        saveConfig(next, requestPermission = true, rebuildCustom = true)
-    }
-
-    private fun rebuildCustomRows() {
-        val container = customRowsContainer ?: return
-        container.removeAllViews()
-        customValueViews.clear()
-        config.customEntries.forEach { entry ->
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(8), dp(4), dp(5), dp(4))
-                background = rounded(V2Colors.CARD_ACTIVE, V2Colors.GREEN_DARK, 1, 9)
-            }
-            row.addView(TextView(this).apply {
-                text = entry.label
-                textSize = 11f
-                setTextColor(V2Colors.WHITE)
-                includeFontPadding = false
-                maxLines = 1
-            }, LinearLayout.LayoutParams(0, -2, 1f))
-            val value = TextView(this).apply {
-                textSize = 11f
-                typeface = Typeface.create("sans-serif-monospace", Typeface.BOLD)
-                minWidth = dp(58)
-                gravity = Gravity.END or Gravity.CENTER_VERTICAL
-                includeFontPadding = false
-            }
-            customValueViews[entry.id] = value to entry.sensorId
-            row.addView(value, wrapWrap(start = 6, end = 6))
-            row.addView(smallButton("Remove").apply {
-                setOnClickListener {
-                    saveConfig(config.copy(customEntries = config.customEntries.filterNot { it.id == entry.id }),
-                        rebuildCustom = true)
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Edit overlay name")
+            .setMessage("Long-press sensor: ${reading.sourceName}\nThis name appears on the overlay.")
+            .setView(input)
+            .setPositiveButton("Save", null)
+            .setNeutralButton("Reset to default", null)
+            .setNegativeButton("Cancel", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val name = input.text?.toString()?.trim().orEmpty()
+                if (name.isNotEmpty()) {
+                    saveConfig(config.copy(sensorOverlayNames = config.sensorOverlayNames + (reading.id to name)))
+                    dialog.dismiss()
+                } else {
+                    input.error = "Name cannot be empty"
                 }
-            }, wrapWrap())
-            container.addView(row, LinearLayout.LayoutParams(-1, -2).apply {
-                topMargin = dp(3)
-                bottomMargin = dp(3)
-            })
-        }
-        updateCustomRows()
-    }
-
-    private fun updateCustomRows() {
-        val sourceMap = catalogReadings.associateBy { it.id }
-        val liveReadingsById = snapshot.allSensors.associateBy { it.id }
-        customValueViews.forEach { (_, pair) ->
-            val reading = liveReadingsById[pair.second] ?: sourceMap[pair.second]
-            pair.first.text = formatTemp(reading)
-            pair.first.setTextColor(temperatureColor(reading))
-        }
-    }
-
-    private fun updateCustomSensorSpinner() {
-        val spinner = customSensorSpinner ?: return
-        val wantedId = lastCustomSensorId ?: catalogReadings.getOrNull(spinner.selectedItemPosition)?.id
-        val labels = catalogReadings.map { it.sourceName }
-        spinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, labels).apply {
-            setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        }
-        val index = catalogReadings.indexOfFirst { it.id == wantedId }
-        spinner.setSelection(if (index >= 0) index else 0)
-        spinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
-                lastCustomSensorId = catalogReadings.getOrNull(position)?.id
             }
-            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) { lastCustomSensorId = null }
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                saveConfig(config.copy(sensorOverlayNames = config.sensorOverlayNames - reading.id))
+                dialog.dismiss()
+            }
         }
+        dialog.show()
     }
 
     private fun buildSettingsSection(parent: LinearLayout) {
@@ -679,7 +595,6 @@ class MainActivity : Activity() {
                 snapshot = fresh
                 catalogReadings = fresh.allSensors
                 if (idsChanged) rebuildSensorRows() else updateSensorRows()
-                updateCustomSensorSpinner()
                 updateLiveValues()
             }
             if (screenActive && !HudConfig.isRunning() && samplingHandler === handler) {
@@ -714,10 +629,9 @@ class MainActivity : Activity() {
         } catch (_: Exception) { }
     }
 
-    private fun saveConfig(next: HudConfig, requestPermission: Boolean = false, rebuildCustom: Boolean = false) {
+    private fun saveConfig(next: HudConfig, requestPermission: Boolean = false) {
         config = next
         next.save(this)
-        if (rebuildCustom) rebuildCustomRows()
         updateLiveValues()
         updateOverlayControl()
         syncOverlayState(requestPermission)
@@ -792,7 +706,6 @@ class MainActivity : Activity() {
             updateTileValue(key, tile)
         }
         updateSensorRows()
-        updateCustomRows()
     }
 
     private fun updateTileValue(key: String, tile: MetricTile) {
@@ -806,14 +719,19 @@ class MainActivity : Activity() {
 
     private fun styleTile(tile: MetricTile, active: Boolean, reading: ThermalReading?) {
         val temperature = reading?.celsius
-        val heat = temperature
-            ?.takeIf { HudPalette.isHeatColored(it) }
-            ?.let { HudPalette.heatColor(it, 100) }
-        val heatTinted = heat?.let { mixColor(V2Colors.CARD, it, 0.15f) } ?: V2Colors.CARD
+        val heat = temperature?.let { HudPalette.heatColor(it, 100) }
+        val tintStrength = when {
+            temperature == null -> 0f
+            HudPalette.isHeatColored(temperature) -> 0.18f
+            else -> 0.10f
+        }
+        val heatTinted = heat?.let { mixColor(V2Colors.CARD, it, tintStrength) } ?: V2Colors.CARD
         val fill = if (active) mixColor(heatTinted, V2Colors.GREEN, 0.10f) else heatTinted
         val stroke = when {
             active -> V2Colors.GREEN
-            heat != null -> mixColor(V2Colors.EDGE, heat, 0.55f)
+            heat != null && temperature != null -> mixColor(
+                V2Colors.EDGE, heat, if (HudPalette.isHeatColored(temperature)) 0.55f else 0.22f
+            )
             else -> V2Colors.EDGE
         }
         tile.card.background = rounded(fill, stroke, if (active) 2 else 1, 13)
@@ -825,15 +743,19 @@ class MainActivity : Activity() {
 
     private fun styleSensorRow(row: LinearLayout, active: Boolean, reading: ThermalReading?) {
         val temperature = reading?.celsius
-        // Keep cards neutral below the same 80°C threshold used for the value text/overlay.
-        val heat = temperature
-            ?.takeIf { HudPalette.isHeatColored(it) }
-            ?.let { HudPalette.heatColor(it, 100) }
-        val heatTinted = heat?.let { mixColor(V2Colors.CARD, it, 0.15f) } ?: V2Colors.CARD
+        val heat = temperature?.let { HudPalette.heatColor(it, 100) }
+        val tintStrength = when {
+            temperature == null -> 0f
+            HudPalette.isHeatColored(temperature) -> 0.18f
+            else -> 0.10f
+        }
+        val heatTinted = heat?.let { mixColor(V2Colors.CARD, it, tintStrength) } ?: V2Colors.CARD
         val fill = if (active) mixColor(heatTinted, V2Colors.GREEN, 0.10f) else heatTinted
         val stroke = when {
             active -> V2Colors.GREEN
-            heat != null -> mixColor(V2Colors.EDGE, heat, 0.55f)
+            heat != null && temperature != null -> mixColor(
+                V2Colors.EDGE, heat, if (HudPalette.isHeatColored(temperature)) 0.55f else 0.22f
+            )
             else -> V2Colors.EDGE
         }
         row.background = rounded(fill, stroke, if (active) 2 else 1, 12)

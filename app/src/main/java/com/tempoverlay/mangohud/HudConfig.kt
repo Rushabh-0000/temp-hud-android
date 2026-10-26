@@ -1,22 +1,13 @@
 package com.tempoverlay.mangohud
 
 import android.content.Context
-import org.json.JSONArray
 import org.json.JSONObject
-import java.util.UUID
-
-data class CustomHudEntry(
-    val id: String = UUID.randomUUID().toString(),
-    val label: String,
-    val sensorId: String
-)
 
 data class HudConfig(
     val showCpuTemp: Boolean = false,
     val showGpuTemp: Boolean = false,
     val selectedThermalSensors: Set<String> = emptySet(),
     val selectedCpuCores: Set<Int> = emptySet(),
-    val customEntries: List<CustomHudEntry> = emptyList(),
     val refreshMs: Int = 1500,
     val backgroundOpacity: Int = 0,
     val scalePercent: Int = 100,
@@ -26,13 +17,14 @@ data class HudConfig(
     val lockPosition: Boolean = false,
     val positionXDp: Int = 8,
     val positionYDp: Int = 100,
-    val overlayPaused: Boolean = false
+    val overlayPaused: Boolean = false,
+    val sensorOverlayNames: Map<String, String> = emptyMap()
 ) {
     fun save(context: Context) {
         val stable = copy(
             selectedThermalSensors = selectedThermalSensors.toSet(),
             selectedCpuCores = selectedCpuCores.filter { it in 0..7 }.toSet(),
-            customEntries = customEntries.toList(),
+            sensorOverlayNames = sensorOverlayNames.filterValues { it.isNotBlank() },
             refreshMs = refreshMs.coerceIn(500, 3000),
             backgroundOpacity = backgroundOpacity.coerceIn(0, 65),
             scalePercent = scalePercent.coerceIn(70, 115),
@@ -42,16 +34,15 @@ data class HudConfig(
             positionXDp = positionXDp.coerceAtLeast(0),
             positionYDp = positionYDp.coerceAtLeast(0)
         )
-        val entries = JSONArray()
-        stable.customEntries.forEach { entry ->
-            entries.put(JSONObject().put("id", entry.id).put("label", entry.label).put("sensorId", entry.sensorId))
-        }
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putBoolean("cpu_temp", stable.showCpuTemp)
             .putBoolean("gpu_temp", stable.showGpuTemp)
             .putStringSet("selected_thermal_sensors", HashSet(stable.selectedThermalSensors))
             .putStringSet("selected_cpu_cores", stable.selectedCpuCores.map { it.toString() }.toSet())
-            .putString("custom_entries_json", entries.toString())
+            .putString("sensor_overlay_names_json", JSONObject().apply {
+                stable.sensorOverlayNames.forEach { (sensorId, overlayName) -> put(sensorId, overlayName) }
+            }.toString())
+            .remove("custom_entries_json")
             .putInt("refresh_ms", stable.refreshMs)
             .putInt("transparency", stable.backgroundOpacity)
             .putInt("scale_percent", stable.scalePercent)
@@ -67,7 +58,7 @@ data class HudConfig(
     }
 
     fun hasActiveRows(): Boolean = showCpuTemp || showGpuTemp || selectedCpuCores.isNotEmpty() ||
-        selectedThermalSensors.isNotEmpty() || customEntries.isNotEmpty()
+        selectedThermalSensors.isNotEmpty()
 
     fun withMetric(key: String, enabled: Boolean): HudConfig = when (key) {
         "cpuTemp" -> copy(showCpuTemp = enabled)
@@ -107,7 +98,7 @@ data class HudConfig(
                         selectedCpuCores = p.getStringSet("selected_cpu_cores", emptySet())
                             ?.mapNotNull { it.toIntOrNull()?.takeIf { core -> core in 0..7 } }?.toSet()
                             ?: emptySet(),
-                        customEntries = parseEntries(p.getString("custom_entries_json", "[]") ?: "[]"),
+                        sensorOverlayNames = parseSensorNames(p.getString("sensor_overlay_names_json", "{}") ?: "{}"),
                         refreshMs = p.getInt("refresh_ms", 1500).coerceIn(500, 3000),
                         backgroundOpacity = p.getInt("transparency", 0).coerceIn(0, 65),
                         scalePercent = p.getInt("scale_percent", 100).coerceIn(70, 115),
@@ -125,19 +116,19 @@ data class HudConfig(
             }
         }
 
-        private fun parseEntries(raw: String): List<CustomHudEntry> = try {
-            val array = JSONArray(raw)
-            buildList {
-                for (i in 0 until array.length()) {
-                    val item = array.optJSONObject(i) ?: continue
-                    val label = item.optString("label", "").trim()
-                    val sensorId = item.optString("sensorId", "").trim()
-                    if (label.isNotEmpty() && sensorId.isNotEmpty()) {
-                        add(CustomHudEntry(item.optString("id", UUID.randomUUID().toString()), label, sensorId))
-                    }
-                }
+        private fun parseSensorNames(raw: String): Map<String, String> = try {
+            val json = JSONObject(raw)
+            val names = linkedMapOf<String, String>()
+            val keys = json.keys()
+            while (keys.hasNext()) {
+                val sensorId = keys.next()
+                val name = json.optString(sensorId, "").trim()
+                if (name.isNotEmpty()) names[sensorId] = name
             }
-        } catch (_: Exception) { emptyList() }
+            names
+        } catch (_: Exception) {
+            emptyMap()
+        }
 
         fun isRunning(): Boolean = overlayRunning
         fun setRunning(running: Boolean) { overlayRunning = running }
@@ -148,9 +139,14 @@ object HudPalette {
     private const val WHITE = 0xFFF8FAFC.toInt()
     const val COLOR_START_C = 80f
 
-    // Match the DevCheck-style thermal threshold: stay neutral below ~80°C,
-    // then progress from yellow to orange and red as temperature rises.
+    // Cooler temperatures are green to lime/yellow-green. At 80°C it changes
+    // to a hot yellow, then orange and red as temperature keeps rising.
     private val HEAT_STOPS = listOf(
+        25f to 0xFF44E879.toInt(),
+        40f to 0xFF5BE36D.toInt(),
+        55f to 0xFF82E25A.toInt(),
+        70f to 0xFFACDE4D.toInt(),
+        79f to 0xFFC4D94A.toInt(),
         80f to 0xFFFFD34F.toInt(),
         85f to 0xFFFF8B45.toInt(),
         90f to 0xFFFF414B.toInt()
@@ -161,7 +157,6 @@ object HudPalette {
     fun isHeatColored(celsius: Float): Boolean = celsius >= COLOR_START_C
 
     fun heatColor(celsius: Float, brightness: Int): Int {
-        if (celsius < COLOR_START_C) return applyBrightness(WHITE, brightness)
         val stops = HEAT_STOPS
         if (celsius <= stops.first().first) return applyBrightness(stops.first().second, brightness)
         if (celsius >= stops.last().first) return applyBrightness(stops.last().second, brightness)
@@ -182,13 +177,18 @@ object HudPalette {
 
     private fun applyBrightness(color: Int, brightness: Int): Int {
         val percent = brightness.coerceIn(35, 150) / 100f
-        // 100% slider brightness maps to 150% color gain; output channels are clamped.
-        val gain = 0.5f + percent
+        // Boost intensity while scaling all channels equally to preserve the heat-map hue.
+        val requestedGain = 0.5f + percent
+        val red = android.graphics.Color.red(color)
+        val green = android.graphics.Color.green(color)
+        val blue = android.graphics.Color.blue(color)
+        val largest = maxOf(red, green, blue, 1)
+        val gain = minOf(requestedGain, 255f / largest)
         return android.graphics.Color.argb(
             android.graphics.Color.alpha(color),
-            (android.graphics.Color.red(color) * gain).toInt().coerceIn(0, 255),
-            (android.graphics.Color.green(color) * gain).toInt().coerceIn(0, 255),
-            (android.graphics.Color.blue(color) * gain).toInt().coerceIn(0, 255)
+            (red * gain).toInt().coerceIn(0, 255),
+            (green * gain).toInt().coerceIn(0, 255),
+            (blue * gain).toInt().coerceIn(0, 255)
         )
     }
 }

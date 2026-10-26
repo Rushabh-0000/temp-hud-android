@@ -236,10 +236,12 @@ class OverlayService : Service() {
         }
         snapshot.allSensors
             .filter { it.id in config.selectedThermalSensors }
-            .forEach { add(OverlayRow(SensorSourceLabels.overlayLabel(it), it)) }
-        config.customEntries.forEach { custom ->
-            add(OverlayRow(custom.label, snapshot.allSensors.firstOrNull { it.id == custom.sensorId }))
-        }
+            .forEach { reading ->
+                val overlayName = config.sensorOverlayNames[reading.id]
+                    ?.takeIf { it.isNotBlank() }
+                    ?: SensorSourceLabels.overlayLabel(reading)
+                add(OverlayRow(overlayName, reading))
+            }
     }
 
     private inner class HudView(context: android.content.Context, initialConfig: HudConfig) : View(context) {
