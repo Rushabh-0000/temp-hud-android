@@ -259,7 +259,7 @@ class MainActivity : Activity() {
             setPadding(dp(14), dp(10), dp(14), dp(18))
             setBackgroundColor(Ui.BG)
         }
-        scroll.addView(column, ScrollView.LayoutParams(-1, -2))
+        scroll.addView(column)
         scrollView = scroll
         setContentView(scroll)
 
@@ -426,7 +426,7 @@ class MainActivity : Activity() {
 
         if (grouped.isEmpty()) {
             parent.addView(label(if (isGpu) "No GPU-labelled thermal sources are exposed." else "No per-core CPU sources are exposed.",
-                11f, Ui.MUTED, false).apply { setPadding(dp(8), dp(6), dp(8), dp(10) })
+                11f, Ui.MUTED, false).apply { setPadding(dp(8), dp(6), dp(8), dp(10)) })
             )
             return
         }
