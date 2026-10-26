@@ -3,7 +3,7 @@
 Compact MangoHud-inspired Android temperature overlay for Android 11+, written in Kotlin with Jetpack Compose Material 3.
 
 ## Resource use and live readings
-- The floating overlay is a native Android View hosted by a foreground service. The Compose settings activity no longer keeps polling once it pauses; Android can release its activity UI while the small overlay service remains active.
+- The floating overlay is a native Android View hosted by a foreground service. The Compose settings activity stops collecting/polling as soon as it pauses. If the HUD service is running, leaving the app also removes the settings task to free its Compose screen; reopen Temp HUD from the launcher to edit settings while the HUD keeps running.
 - The service samples thermal files on a background-priority thread at the chosen interval (default 1.50 seconds). The app preview consumes the same in-process sample while the overlay is running, so the two displays do not compete with separate readers or show values from different sample times.
 - The app samples sensors itself only while it is resumed and the overlay service is stopped. Browsing all thermal zones triggers a temporary catalog read only while that screen is open.
 - No network permission, analytics, updater UI, APK download/install code, or updater receiver. The overlay only polls the selected CPU/GPU and custom sensor sources unless the user opens the full sensor picker.

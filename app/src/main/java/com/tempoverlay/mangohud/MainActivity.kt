@@ -67,6 +67,15 @@ private val coreKeys = (0..7).map { "core${it}Temp" }
 private val coreLabels = (0..7).map { "CPU $it" }
 
 class MainActivity : ComponentActivity() {
+    override fun onStop() {
+        super.onStop()
+        // Once the user leaves for a game, discard the settings UI task so only
+        // the lightweight foreground overlay remains active. The launcher reopens it.
+        if (HudConfig.isRunning(this) && !isChangingConfigurations) {
+            finishAndRemoveTask()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.statusBarColor = android.graphics.Color.rgb(8, 12, 17)
