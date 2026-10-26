@@ -701,7 +701,7 @@ class MainActivity : Activity() {
             }
         }
         stopSampler()
-        if (screenActive && !wasRunning) requestCatalogMode(true)
+        if (screenActive && !wasRunning && sensorsExpanded) requestCatalogMode(true)
     }
 
     private fun isMetricActive(key: String): Boolean = when {
