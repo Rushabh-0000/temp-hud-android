@@ -34,6 +34,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+      - name: Refuse signed release while repository is public
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          private="$(gh api "repos/$GITHUB_REPOSITORY" --jq '.private')"
+          if [ "$private" != "true" ]; then
+            echo "::error::Make the repository private before creating a release APK signed with the persistent release key."
+            exit 1
+          fi
       - name: Validate signing secrets
         shell: bash
         run: |
