@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Create a persistent Android release key and copy/paste GitHub Actions secrets.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [[ -d "$SCRIPT_DIR/../app" && -d "$SCRIPT_DIR/../.github" ]]; then
+if [[ -d "$SCRIPT_DIR/../app" && -d "$SCRIPT_DIR/../.github" ]] || [[ "$(basename "$SCRIPT_DIR")" == "scripts" ]]; then
   ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 else
   ROOT_DIR="$SCRIPT_DIR"
