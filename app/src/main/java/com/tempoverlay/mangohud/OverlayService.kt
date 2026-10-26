@@ -52,15 +52,14 @@ class OverlayService : Service() {
             val startedAt = SystemClock.uptimeMillis()
             val config = HudConfig.load(this@OverlayService)
             val snapshot = sensorReader.sample(config)
+            // The same sample feeds both HUD and app preview, avoiding divergent values.
+            TemperatureRepository.publish(snapshot)
             target.post { if (hudView === target) target.update(config, snapshot) }
 
-            // Keep the configured interval as the poll period, rather than adding it
-            // after sensor-reading/render-queue work. If a poll overruns, yield one frame
-            // instead of immediately spinning at 100% CPU.
-            val periodMs = config.refreshMs.toLong()
-            val dueAt = startedAt + periodMs
-            val now = SystemClock.uptimeMillis()
-            handler.postAtTime(this, if (dueAt > now) dueAt else now + 16L)
+            val elapsedMs = SystemClock.uptimeMillis() - startedAt
+            // Start-to-start timing avoids adding read duration to the selected interval.
+            // Keep a small floor if thermal reads overrun, preventing a busy loop.
+            handler.postDelayed(this, (config.refreshMs.toLong() - elapsedMs).coerceAtLeast(100L))
         }
     }
 
@@ -119,7 +118,7 @@ class OverlayService : Service() {
 
         // The HUD is visible UI: background priority can make its values lag behind
         // the app preview under load. Use display priority for this short sampling task.
-        pollingThread = HandlerThread("TempHudThermalPoll", Process.THREAD_PRIORITY_DISPLAY).also { it.start() }
+        pollingThread = HandlerThread("TempHudThermalPoll", Process.THREAD_PRIORITY_BACKGROUND).also { it.start() }
         pollingHandler = Handler(pollingThread!!.looper)
         pollingHandler?.post(ticker)
     }
@@ -207,7 +206,6 @@ class OverlayService : Service() {
             val nextRows = rows(nextConfig, nextSnapshot)
             val layoutChanged = previous.scalePercent != nextConfig.scalePercent ||
                 previousRows.map { it.label } != nextRows.map { it.label } ||
-                previous.textColorIndex != nextConfig.textColorIndex ||
                 previous.textBrightness != nextConfig.textBrightness ||
                 previous.backgroundOpacity != nextConfig.backgroundOpacity
             val positionChanged = previous.positionXDp != nextConfig.positionXDp || previous.positionYDp != nextConfig.positionYDp
@@ -273,7 +271,7 @@ class OverlayService : Service() {
                 canvas.drawRoundRect(RectF(0f, 0f, w, h), dp(2f).toFloat(), dp(2f).toFloat(), fillPaint)
             }
 
-            val labelColor = HudPalette.labelColor(config.textColorIndex, config.textBrightness)
+            val labelColor = HudPalette.labelColor(config.textBrightness)
             rowList.forEachIndexed { index, row ->
                 configureTextPaint(10f)
                 val baseline = (index * u(ROW_HEIGHT_DP) + u(11.5f)).toFloat()

@@ -17,13 +17,12 @@ android {
         applicationId = "com.tempoverlay.mangohud"
         minSdk = 30
         targetSdk = 36
-        versionCode = (providers.gradleProperty("VERSION_CODE").orNull ?: "7").toInt()
-        versionName = providers.gradleProperty("VERSION_NAME").orNull ?: "0.5.2"
+        versionCode = (providers.gradleProperty("VERSION_CODE").orNull ?: "8").toInt()
+        versionName = providers.gradleProperty("VERSION_NAME").orNull ?: "0.5.3"
     }
 
     buildFeatures {
         compose = true
-        buildConfig = true
     }
 
     signingConfigs {

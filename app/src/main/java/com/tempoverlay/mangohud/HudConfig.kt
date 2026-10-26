@@ -27,7 +27,6 @@ data class HudConfig(
     val refreshMs: Int = 1500,
     val backgroundOpacity: Int = 0,
     val scalePercent: Int = 100,
-    val textColorIndex: Int = 0,
     val textBrightness: Int = 100,
     val lockPosition: Boolean = false,
     val positionXDp: Int = 8,
@@ -57,7 +56,6 @@ data class HudConfig(
             .putInt("refresh_ms", refreshMs.coerceIn(500, 5000))
             .putInt("transparency", backgroundOpacity.coerceIn(0, 65))
             .putInt("scale_percent", scalePercent.coerceIn(70, 115))
-            .putInt("text_color_index", textColorIndex.coerceIn(0, HudPalette.textOptions.lastIndex))
             .putInt("text_brightness", textBrightness.coerceIn(35, 100))
             .putBoolean("lock_position", lockPosition)
             .putInt("position_x_dp", positionXDp.coerceAtLeast(0))
@@ -150,7 +148,6 @@ data class HudConfig(
                 refreshMs = p.getInt("refresh_ms", 1500).coerceIn(500, 5000),
                 backgroundOpacity = p.getInt("transparency", 0).coerceIn(0, 65),
                 scalePercent = p.getInt("scale_percent", 100).coerceIn(70, 115),
-                textColorIndex = p.getInt("text_color_index", 0).coerceIn(0, HudPalette.textOptions.lastIndex),
                 textBrightness = p.getInt("text_brightness", 100).coerceIn(35, 100),
                 lockPosition = p.getBoolean("lock_position", false),
                 positionXDp = p.getInt("position_x_dp", 8).coerceAtLeast(0),
@@ -169,17 +166,9 @@ data class HudConfig(
 }
 
 object HudPalette {
-    data class TextOption(val name: String, val argb: Int)
-    val textOptions = listOf(
-        TextOption("White", 0xFFF8FAFC.toInt()),
-        TextOption("Mint", 0xFF8CFFD0.toInt()),
-        TextOption("Cyan", 0xFF80DFFF.toInt()),
-        TextOption("Amber", 0xFFFFD08A.toInt()),
-        TextOption("Violet", 0xFFC8B5FF.toInt())
-    )
+    private const val WHITE = 0xFFF8FAFC.toInt()
 
-    fun labelColor(index: Int, brightness: Int): Int =
-        applyBrightness(textOptions.getOrElse(index) { textOptions[0] }.argb, brightness)
+    fun labelColor(brightness: Int): Int = applyBrightness(WHITE, brightness)
 
     fun heatColor(celsius: Float, brightness: Int): Int {
         val stops = listOf(
@@ -208,8 +197,6 @@ object HudPalette {
     }
 
     private fun applyBrightness(color: Int, brightness: Int): Int {
-        // Boost the top of the slider so 100% visibly brightens coloured temperature text.
-        // Gain rises smoothly from the selected percentage to 1.22x at the maximum.
         val percent = brightness.coerceIn(35, 100) / 100f
         val gain = percent * (1.0f + 0.22f * percent)
         return android.graphics.Color.argb(

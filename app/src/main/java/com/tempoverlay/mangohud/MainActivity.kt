@@ -7,6 +7,8 @@ import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -61,7 +63,6 @@ private val CleanTypography: Typography = Typography().let { t ->
 
 private val coreKeys = (0..7).map { "core${it}Temp" }
 private val coreLabels = (0..7).map { "CPU $it" }
-private val palettes = HudPalette.textOptions
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -95,7 +96,10 @@ private fun SettingsScreen() {
     val density = LocalDensity.current
     val safeTop = with(density) { WindowInsets.safeDrawing.getTop(this).toDp().value.toInt() }
     var config by remember { mutableStateOf(HudConfig.load(context)) }
-    var snapshot by remember { mutableStateOf(TemperatureSnapshot()) }
+    val snapshot by TemperatureRepository.snapshots.collectAsState()
+    var sensorCatalogSnapshot by remember { mutableStateOf(TemperatureSnapshot()) }
+    var overlayActive by remember { mutableStateOf(HudConfig.isRunning(context)) }
+    var screenResumed by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("") }
     var search by remember { mutableStateOf("") }
     var showAllSensors by remember { mutableStateOf(false) }
@@ -106,12 +110,45 @@ private fun SettingsScreen() {
     var customSensorId by remember { mutableStateOf("") }
     var sensorMenuOpen by remember { mutableStateOf(false) }
 
+    val lifecycle = (context as? ComponentActivity)?.lifecycle
+    DisposableEffect(lifecycle) {
+        if (lifecycle == null) {
+            screenResumed = true
+            onDispose { }
+        } else {
+            val observer = LifecycleEventObserver { _, event ->
+                when (event) {
+                    Lifecycle.Event.ON_RESUME -> screenResumed = true
+                    Lifecycle.Event.ON_PAUSE, Lifecycle.Event.ON_STOP, Lifecycle.Event.ON_DESTROY -> screenResumed = false
+                    else -> Unit
+                }
+            }
+            lifecycle.addObserver(observer)
+            screenResumed = lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+            onDispose { lifecycle.removeObserver(observer) }
+        }
+    }
+
     val reader = remember { SensorReader() }
     val latestConfig by rememberUpdatedState(config)
-    LaunchedEffect(reader) {
+    LaunchedEffect(reader, screenResumed, showAllSensors, showCustomEditor) {
+        if (!screenResumed) return@LaunchedEffect
         while (true) {
             val current = latestConfig
-            snapshot = withContext(Dispatchers.IO) { reader.sample(current, includeAllForSettings = true) }
+            val serviceOwnsPolling = HudConfig.isRunning(context)
+            overlayActive = serviceOwnsPolling
+            val needsCatalog = showAllSensors || showCustomEditor
+
+            // The overlay service is the single sampler while active. The app only
+            // scans thermal files when visible and the service is stopped, or when
+            // the user explicitly opens the sensor/custom-row picker.
+            if (!serviceOwnsPolling || needsCatalog) {
+                val fresh = withContext(Dispatchers.IO) {
+                    reader.sample(current, includeAllForSettings = needsCatalog)
+                }
+                if (needsCatalog) sensorCatalogSnapshot = fresh
+                if (!serviceOwnsPolling) TemperatureRepository.publish(fresh)
+            }
             delay(current.refreshMs.toLong())
         }
     }
@@ -130,6 +167,7 @@ private fun SettingsScreen() {
         try {
             val intent = Intent(context, OverlayService::class.java).setAction(OverlayService.ACTION_START)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent) else context.startService(intent)
+            overlayActive = true
             status = "Overlay applied."
         } catch (e: Exception) {
             status = "Could not start overlay: ${e.javaClass.simpleName}"
@@ -138,13 +176,14 @@ private fun SettingsScreen() {
 
     fun stopOverlay() {
         context.stopService(Intent(context, OverlayService::class.java))
+        overlayActive = false
         status = "Overlay stopped."
     }
 
     fun temp(reading: ThermalReading?): String =
         reading?.celsius?.let { String.format(Locale.US, "%.1f°C", it) } ?: "N/A"
 
-    val sortedSensors = snapshot.allSensors.sortedWith(
+    val sortedSensors = sensorCatalogSnapshot.allSensors.sortedWith(
         compareBy<ThermalReading> { it.label }.thenBy { it.id }
     )
     val filteredSensors = sortedSensors.filter {
@@ -166,7 +205,37 @@ private fun SettingsScreen() {
             .padding(horizontal = 13.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        // Overall values and toggles: compact rows, no app title/preview banner.
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 5.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                Modifier.size(38.dp).background(Mint.copy(alpha = 0.14f), RoundedCornerShape(11.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("TH", color = Mint, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            }
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                Text("Temp HUD", color = MainText, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                Text("CPU & GPU TEMPERATURES", color = Muted, fontSize = 10.sp, letterSpacing = 0.8.sp)
+            }
+            Surface(
+                color = if (overlayActive) Color(0xFF15392D) else Panel,
+                shape = RoundedCornerShape(50),
+                border = androidx.compose.foundation.BorderStroke(1.dp, if (overlayActive) Mint.copy(alpha = 0.5f) else Edge)
+            ) {
+                Text(
+                    if (overlayActive) "RUNNING" else "READY",
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    color = if (overlayActive) Mint else Muted,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        }
+
+        // Overall values and toggles.
         CompactSensorRow(
             label = "CPU",
             value = temp(snapshot.cpuOverall),
@@ -295,7 +364,8 @@ private fun SettingsScreen() {
             ) { Text("Add overlay row", fontWeight = FontWeight.SemiBold) }
         }
         config.customEntries.forEach { entry ->
-            val sensor = sortedSensors.firstOrNull { it.id == entry.sensorId }
+            val sensor = snapshot.allSensors.firstOrNull { it.id == entry.sensorId }
+                ?: sensorCatalogSnapshot.allSensors.firstOrNull { it.id == entry.sensorId }
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(entry.label, color = MainText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
@@ -334,18 +404,6 @@ private fun SettingsScreen() {
                 "Dim", "Bright") { save(config.copy(textBrightness = it.toInt())) }
             SettingsSlider("Background opacity", "${config.backgroundOpacity}%", config.backgroundOpacity.toFloat(), 0f..65f, 12,
                 "Text only", "More visible") { save(config.copy(backgroundOpacity = it.toInt())) }
-            Text("Label colour", color = MainText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
-                palettes.forEachIndexed { index, item ->
-                    FilterChip(
-                        selected = config.textColorIndex == index,
-                        onClick = { save(config.copy(textColorIndex = index)) },
-                        label = { Text(item.name, fontSize = 10.sp, maxLines = 1) },
-                        modifier = Modifier.weight(1f),
-                        colors = FilterChipDefaults.filterChipColors(selectedLabelColor = Color(item.argb))
-                    )
-                }
-            }
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text("Lock position", color = MainText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
