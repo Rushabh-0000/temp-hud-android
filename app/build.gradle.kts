@@ -17,12 +17,14 @@ android {
         applicationId = "com.tempoverlay.mangohud"
         minSdk = 30
         targetSdk = 36
-        versionCode = (providers.gradleProperty("VERSION_CODE").orNull ?: "9").toInt()
-        versionName = providers.gradleProperty("VERSION_NAME").orNull ?: "0.6.0"
+        versionCode = (providers.gradleProperty("VERSION_CODE").orNull ?: "10").toInt()
+        versionName = providers.gradleProperty("VERSION_NAME").orNull ?: "0.6.1"
     }
 
     buildFeatures {
         compose = true
+        // No generated BuildConfig class is used by this app.
+        buildConfig = false
     }
 
     signingConfigs {
@@ -44,10 +46,9 @@ android {
         getByName("release") {
             isMinifyEnabled = true
             isShrinkResources = true
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
+            // Manifest components are kept by Android's generated R8 rules.
+            // Avoid broad custom keep rules so R8 can remove unused library code.
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
             if (releaseStorePath != null) {
                 signingConfig = signingConfigs.getByName("release")
             }

@@ -40,4 +40,4 @@ The command creates `temp-hud-release.p12` and `github-release-secrets.txt` in t
 The generated key and secrets file are ignored by Git. Back up the keystore securely; every update must use the same signing key. Never post either file or its contents publicly. Then run **Temp HUD Build and Release** manually with **Publish release** enabled.
 
 ## Toolchain
-AGP 9.3.1, Kotlin 2.4.21, Gradle 9.7.0, JDK 25, compile/target SDK 36, min SDK 30, Compose BOM 2026.06.00. Release code/resources are minified and shrunk.
+AGP 9.3.1, Kotlin 2.4.21, Gradle 9.7.0, JDK 25, compile/target SDK 36, min SDK 30, Compose BOM 2026.06.00. Release code/resources are minified and shrunk with the optimized R8 pipeline. The launcher icon is an adaptive vector, not a raster image, so it adds very little packaged size. Compose Material 3 and Kotlin runtime account for most of the baseline size; around 2 MB is already small for a modern Compose app.
