@@ -38,8 +38,8 @@ jobs:
       ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
       ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
       ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-      PUBLISH_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_release || false }}
-      RELEASE_BUMP: ${{ inputs.bump || 'patch' }}
+      PUBLISH_RELEASE: ${{ (github.event_name == 'workflow_dispatch' && inputs.publish_release) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[release]')) }}
+      RELEASE_BUMP: ${{ (github.event_name == 'push' && contains(github.event.head_commit.message, '[release]') && 'minor') || inputs.bump || 'patch' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -83,10 +83,10 @@ jobs:
           if [[ "$PUBLISH_RELEASE" == "true" ]]; then
             latest="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1 --json tagName --jq '.[0].tagName // empty' || true)"
             if [[ -z "$latest" ]]; then
-              version="0.7.1"
+              version="0.7.0"
             else
               base="${latest#v}"
-              if [[ ! "$base" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]; then base="0.7.1"; fi
+              if [[ ! "$base" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]; then base="0.7.0"; fi
               IFS='.' read -r major minor patch <<< "$base"
               case "$RELEASE_BUMP" in
                 major) major=$((major + 1)); minor=0; patch=0 ;;
@@ -96,7 +96,7 @@ jobs:
               version="${major}.${minor}.${patch}"
             fi
           else
-            version="0.7.1"
+            version="0.7.0"
           fi
 
           code=$((1000 + GITHUB_RUN_NUMBER))

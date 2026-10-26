@@ -27,7 +27,7 @@ No Internet permission, analytics, updater UI, APK download/install code, or upd
 ## One workflow and release signing
 The only workflow is `.github/workflows/android.yml`. It builds on pushes and has a manual option to publish a signed release using persistent repository secrets.
 
-Use the persistent keystore you already configured. Copy each value into the matching repository Action secret:
+Use the persistent keystore and four GitHub Actions secrets you already configured. To publish this optimized v0.7.0 build, use the Actions page's manual **Publish release** option, or commit a message containing `[release]` to main. A `[release]` push triggers a minor-version bump; with the existing v0.6.0 release this creates v0.7.0.
 - `ANDROID_KEYSTORE_BASE64`
 - `ANDROID_KEYSTORE_PASSWORD`
 - `ANDROID_KEY_ALIAS`
