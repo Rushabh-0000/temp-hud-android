@@ -99,8 +99,8 @@ data class HudConfig(
                     val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                     val selected = p.getStringSet("selected_thermal_sensors", emptySet())?.toSet() ?: emptySet()
                     val config = HudConfig(
-                        showCpuTemp = p.getBoolean("cpu_temp", true),
-                        showGpuTemp = p.getBoolean("gpu_temp", true),
+                        showCpuTemp = p.getBoolean("cpu_temp", false),
+                        showGpuTemp = p.getBoolean("gpu_temp", false),
                         selectedThermalSensors = selected,
                         selectedCpuCores = p.getStringSet("selected_cpu_cores", emptySet())
                             ?.mapNotNull { it.toIntOrNull()?.takeIf { core -> core in 0..7 } }?.toSet()

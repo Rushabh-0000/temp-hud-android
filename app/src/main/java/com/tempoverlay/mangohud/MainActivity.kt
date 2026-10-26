@@ -289,8 +289,9 @@ class MainActivity : Activity() {
         }, wrapWrap())
         parent.addView(header, matchWrap())
 
-        sensorListContainer = panel().apply { setPadding(dp(6), dp(5), dp(6), dp(5)) }
-        parent.addView(sensorListContainer, matchWrap(bottom = 6))
+        val sensorBox = panel().apply { setPadding(dp(6), dp(5), dp(6), dp(5)) }
+        sensorListContainer = sensorBox
+        parent.addView(sensorBox, matchWrap(bottom = 6))
         rebuildSensorRows()
     }
 
@@ -375,11 +376,12 @@ class MainActivity : Activity() {
             setOnClickListener { addCustomRow() }
         }, wrapWrap())
         box.addView(chooserRow, matchWrap())
-        customRowsContainer = LinearLayout(this).apply {
+        val customRows = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(5), 0, 0)
         }
-        box.addView(customRowsContainer, matchWrap())
+        customRowsContainer = customRows
+        box.addView(customRows, matchWrap())
         parent.addView(box, matchWrap(bottom = 6))
         updateCustomSensorSpinner()
         rebuildCustomRows()
