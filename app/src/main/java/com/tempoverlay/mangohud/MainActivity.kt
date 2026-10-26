@@ -74,22 +74,30 @@ class MainActivity : Activity() {
 
     private val snapshotReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            if (intent.action != OverlayService.ACTION_SNAPSHOT) return
+            if (!screenActive || intent.action != OverlayService.ACTION_SNAPSHOT) return
             val raw = intent.getStringExtra(OverlayService.EXTRA_SNAPSHOT) ?: return
             val fresh = TemperatureSnapshot.fromJson(raw) ?: return
             val wantsCatalog = needsCatalog()
-            val oldCatalog = if (wantsCatalog) catalogSnapshot else null
-            snapshot = fresh
+            val oldCatalog = catalogSnapshot
             val catalogComplete = intent.getBooleanExtra(OverlayService.EXTRA_CATALOG_COMPLETE, false)
-            catalogSnapshot = if (wantsCatalog) fresh else TemperatureSnapshot()
-            fullCatalogLoaded = wantsCatalog && catalogComplete
-            statusView?.text = "RUNNING"
-            statusView?.setTextColor(Ui.MINT)
-            if (wantsCatalog && oldCatalog != null && !sameSensorIds(oldCatalog, fresh)) {
-                rebuildKeepingScroll()
+
+            snapshot = fresh
+            // A normal sample contains only the active CPU/GPU/selected zones. Never
+            // replace the full picker catalog with that partial list: it made section
+            // counts jump and caused the whole view tree to rebuild on transient read errors.
+            if (wantsCatalog && catalogComplete) {
+                catalogSnapshot = fresh
+                fullCatalogLoaded = true
+                if (!sameSensorIds(oldCatalog, fresh)) {
+                    rebuildKeepingScroll()
+                } else {
+                    updateValues()
+                }
             } else {
                 updateValues()
             }
+            statusView?.text = "RUNNING"
+            statusView?.setTextColor(Ui.MINT)
         }
     }
 
@@ -306,7 +314,7 @@ class MainActivity : Activity() {
             setBackgroundColor(Ui.BG)
             clipToPadding = false
             clipChildren = false
-            isFillViewport = true
+            isFillViewport = false
             isVerticalScrollBarEnabled = true
         }
         val column = LinearLayout(this).apply {
@@ -316,7 +324,7 @@ class MainActivity : Activity() {
         }
         column.minimumHeight = 0
         column.clipChildren = false
-        scroll.addView(column, android.widget.FrameLayout.LayoutParams(
+        scroll.addView(column, ScrollView.LayoutParams(
             android.view.ViewGroup.LayoutParams.MATCH_PARENT,
             android.view.ViewGroup.LayoutParams.WRAP_CONTENT
         ))
@@ -486,7 +494,7 @@ class MainActivity : Activity() {
         }.groupBy { it.name }.toSortedMap(compareBySourceName())
 
         if (grouped.isEmpty()) {
-            val message = if (isGpu) "No paired GPU Use/Step sources are exposed." else "No paired CPU Use/Step sources are exposed."
+            val message = if (isGpu) "No GPU Use/Step sources are exposed." else "No CPU Use/Step sources are exposed."
             parent.addView(label(message, 11f, Ui.MUTED, false).apply {
                 setPadding(dp(8), dp(6), dp(8), dp(10))
             })
@@ -494,22 +502,28 @@ class MainActivity : Activity() {
         }
 
         for ((name, options) in grouped) {
-            val groupCard = card().apply { setPadding(dp(8), dp(4), dp(8), dp(4)) }
-            groupCard.addView(label(name, 12f, if (isGpu) Ui.BLUE else Ui.MINT, true).apply { setPadding(0, dp(5), 0, dp(2)) })
-            val sourceRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+            val groupCard = card().apply { setPadding(dp(8), dp(4), dp(8), dp(5)) }
+            groupCard.addView(label(name, 12f, if (isGpu) Ui.BLUE else Ui.MINT, true)
+                .apply { setPadding(0, dp(5), 0, dp(2)) })
+            val sourceRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.TOP
+            }
             for (variant in listOf("usr", "step")) {
                 val option = options.firstOrNull { it.variant == variant }
                 val cell = LinearLayout(this).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    setPadding(dp(2), dp(3), dp(2), dp(3))
+                    orientation = LinearLayout.VERTICAL
+                    gravity = Gravity.TOP
+                    setPadding(dp(2), dp(2), dp(4), dp(3))
                 }
                 if (option == null) {
-                    cell.addView(
-                        label(if (variant == "usr") "Use —" else "Step —", 10f, Ui.MUTED, false),
-                        LinearLayout.LayoutParams(0, dp(40), 1f)
-                    )
+                    cell.addView(label(if (variant == "usr") "Use —" else "Step —", 10f, Ui.MUTED, false)
+                        .apply { setPadding(0, dp(8), 0, dp(8)) }, matchWrap())
                 } else {
+                    val readRow = LinearLayout(this).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                    }
                     val check = CheckBox(this).apply {
                         text = if (variant == "usr") "Use" else "Step"
                         textSize = 10f
@@ -520,14 +534,21 @@ class MainActivity : Activity() {
                             save(config.withMetric(HudConfig.SENSOR_PREFIX + option.reading.id, enabled))
                         }
                     }
-                    cell.addView(check, LinearLayout.LayoutParams(0, dp(40), 1f))
+                    readRow.addView(check, LinearLayout.LayoutParams(0, dp(38), 1f))
                     val value = label(temp(option.reading), 10.5f, Ui.MINT, true).apply {
                         typeface = Typeface.MONOSPACE
                         gravity = Gravity.CENTER_VERTICAL or Gravity.END
-                        minWidth = dp(57)
+                        minWidth = dp(54)
                     }
                     valueViews[HudConfig.SENSOR_PREFIX + option.reading.id] = value
-                    cell.addView(value, wrapWrap())
+                    readRow.addView(value, wrapWrap())
+                    cell.addView(readRow, matchWrap())
+                    // Keep the full kernel source visible beneath the short UI label.
+                    cell.addView(label(option.reading.sourceName, 8.5f, Ui.MUTED, false).apply {
+                        isSingleLine = true
+                        ellipsize = android.text.TextUtils.TruncateAt.END
+                        setPadding(dp(2), 0, 0, 0)
+                    }, LinearLayout.LayoutParams(-1, dp(16)))
                 }
                 sourceRow.addView(cell, LinearLayout.LayoutParams(0, -2, 1f))
             }
@@ -536,7 +557,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun buildAllSensors(parent: LinearLayout) {
+        private fun buildAllSensors(parent: LinearLayout) {
         val search = EditText(this).apply {
             hint = "Search sensor type"
             setTextColor(Ui.WHITE); setHintTextColor(Ui.MUTED); textSize = 13f; setSingleLine(true)
@@ -548,34 +569,46 @@ class MainActivity : Activity() {
         }
         parent.addView(search, matchWrap(bottom = 6))
         if (!fullCatalogLoaded) {
-            parent.addView(label("Loading every readable sensor on the next poll…", 10f, Ui.MUTED, false)
+            parent.addView(label("Sensor list has not been fully scanned yet.", 10f, Ui.MUTED, false)
                 .apply { setPadding(dp(6), dp(4), dp(6), dp(4)) }, matchWrap())
-            parent.addView(button("Scan all thermal sensors", true).apply {
-                setOnClickListener { scanCatalog() }
-            }, matchWrap(bottom = 6))
         }
+        parent.addView(button(if (fullCatalogLoaded) "Refresh sensor list" else "Scan all thermal sensors", true).apply {
+            setOnClickListener { scanCatalog() }
+        }, matchWrap(bottom = 6))
+
         val readings = allSourceReadings()
         readings.forEach { reading ->
             val item = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(6), dp(2), dp(6), dp(2)) }
-            row.addView(label("${SensorSourceLabels.overlayLabel(reading)} · ${reading.id}", 11f, Ui.WHITE, false),
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(6), dp(2), dp(6), dp(1))
+            }
+            row.addView(label(SensorSourceLabels.overlayLabel(reading), 11f, Ui.WHITE, false),
                 LinearLayout.LayoutParams(0, -2, 1f))
             row.addView(CheckBox(this).apply {
                 buttonTintList = ColorStateList.valueOf(Ui.MINT)
                 isChecked = config.selectedThermalSensors.contains(reading.id)
-                setOnCheckedChangeListener { _, enabled -> save(config.withMetric(HudConfig.SENSOR_PREFIX + reading.id, enabled)) }
+                setOnCheckedChangeListener { _, enabled ->
+                    save(config.withMetric(HudConfig.SENSOR_PREFIX + reading.id, enabled))
+                }
             })
             item.addView(row, matchWrap())
-            val value = label(temp(reading), 10f, Ui.MUTED, false)
+            item.addView(label(reading.sourceName, 9f, Ui.MUTED, false).apply {
+                isSingleLine = true
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setPadding(dp(9), 0, dp(4), 0)
+            }, matchWrap())
+            val value = label(temp(reading), 10f, Ui.MINT, false)
             valueViews[HudConfig.SENSOR_PREFIX + reading.id] = value
-            item.addView(value, matchWrap(start = 7, bottom = 3))
-            parent.addView(item, matchWrap(bottom = 3))
+            item.addView(value, matchWrap(start = 9, bottom = 3))
+            parent.addView(item, matchWrap(bottom = 4))
             sensorSearchRows += item to "${reading.label} ${reading.id} ${reading.sourceName} ${SensorSourceLabels.overlayLabel(reading)}"
         }
         filterSensorSearchRows()
     }
 
-    private fun filterSensorSearchRows() {
+        private fun filterSensorSearchRows() {
         val query = searchText.trim()
         sensorSearchRows.forEach { (row, haystack) ->
             row.visibility = if (query.isEmpty() || haystack.contains(query, ignoreCase = true)) View.VISIBLE else View.GONE
@@ -584,41 +617,26 @@ class MainActivity : Activity() {
 
     private fun buildCustomRows(parent: LinearLayout) {
         val available = allSourceReadings()
-        if (!fullCatalogLoaded) {
-            parent.addView(button("Load all thermal sensors", true).apply {
-                setOnClickListener { scanCatalog() }
-            }, matchWrap(bottom = 6))
-        }
-        if (available.isEmpty()) {
-            parent.addView(button("Scan all thermal sensors", true).apply { setOnClickListener { scanCatalog() } }, matchWrap())
-        } else {
-            val labelInput = EditText(this).apply {
-                hint = "Custom label, e.g. Hotspot"
-                setTextColor(Ui.WHITE); setHintTextColor(Ui.MUTED); textSize = 13f; setSingleLine(true)
-                background = rounded(Ui.PANEL, Ui.EDGE, 10); setPadding(dp(10), dp(8), dp(10), dp(8))
-            }
-            parent.addView(labelInput, matchWrap(bottom = 5))
-            val spinner = Spinner(this).apply {
-                adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item,
-                    available.map { "${SensorSourceLabels.overlayLabel(it)} · ${it.id}" })
-            }
-            parent.addView(spinner, matchWrap(bottom = 5))
-            parent.addView(button("Add custom row", false).apply {
-                setOnClickListener {
-                    val label = labelInput.text.toString().trim()
-                    val index = spinner.selectedItemPosition
-                    if (label.isNotEmpty() && index in available.indices) {
-                        save(config.copy(customEntries = config.customEntries + CustomHudEntry(label = label, sensorId = available[index].id)))
-                        rebuildKeepingScroll()
-                    } else statusLine?.text = "Enter a label and choose a sensor."
-                }
-            }, matchWrap(bottom = 5))
-        }
+
+        // Saved entries appear first so a newly added row is visible immediately.
         config.customEntries.forEach { entry ->
-            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-            row.addView(label(entry.label, 12f, Ui.WHITE, true), LinearLayout.LayoutParams(0, dp(42), 1f))
-            val value = label("N/A", 11f, Ui.MINT, true)
-            valueViews[HudConfig.SENSOR_PREFIX + entry.sensorId] = value
+            val reading = available.firstOrNull { it.id == entry.sensorId }
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            val details = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(0, dp(3), dp(4), dp(3))
+            }
+            details.addView(label(entry.label, 12f, Ui.WHITE, true), matchWrap())
+            details.addView(label(reading?.sourceName ?: entry.sensorId, 9f, Ui.MUTED, false).apply {
+                isSingleLine = true
+                ellipsize = android.text.TextUtils.TruncateAt.END
+            }, matchWrap())
+            row.addView(details, LinearLayout.LayoutParams(0, -2, 1f))
+            val value = label(temp(reading), 11f, Ui.MINT, true)
+            valueViews["custom:${entry.id}"] = value
             row.addView(value, wrapWrap(end = 4))
             row.addView(button("Remove", true, Ui.RED).apply {
                 setOnClickListener {
@@ -628,9 +646,58 @@ class MainActivity : Activity() {
             }, wrapWrap())
             parent.addView(row, matchWrap())
         }
+
+        if (!fullCatalogLoaded) {
+            parent.addView(button("Load all thermal sensors", true).apply {
+                setOnClickListener { scanCatalog() }
+            }, matchWrap(bottom = 6))
+        }
+        if (available.isEmpty()) {
+            parent.addView(label("No sensor list loaded yet. Scan to choose a source.", 10f, Ui.MUTED, false)
+                .apply { setPadding(dp(6), dp(4), dp(6), dp(4)) }, matchWrap())
+            parent.addView(button("Scan all thermal sensors", true).apply {
+                setOnClickListener { scanCatalog() }
+            }, matchWrap())
+            return
+        }
+
+        val labelInput = EditText(this).apply {
+            hint = "Custom label, e.g. Hotspot"
+            setTextColor(Ui.WHITE); setHintTextColor(Ui.MUTED); textSize = 13f; setSingleLine(true)
+            background = rounded(Ui.PANEL, Ui.EDGE, 10); setPadding(dp(10), dp(8), dp(10), dp(8))
+        }
+        parent.addView(labelInput, matchWrap(bottom = 5))
+        val spinner = Spinner(this).apply {
+            adapter = ArrayAdapter(
+                this@MainActivity,
+                android.R.layout.simple_spinner_dropdown_item,
+                available.map { "${SensorSourceLabels.overlayLabel(it)} · ${it.sourceName}" }
+            )
+        }
+        parent.addView(spinner, matchWrap(bottom = 5))
+        parent.addView(button("Add custom row", false).apply {
+            setOnClickListener {
+                val customLabel = labelInput.text.toString().trim()
+                val selected = available.getOrNull(spinner.selectedItemPosition)
+                if (customLabel.isEmpty()) {
+                    statusLine?.text = "Enter a label first."
+                    labelInput.error = "Enter a label"
+                    return@setOnClickListener
+                }
+                if (selected == null) {
+                    statusLine?.text = "Choose a sensor from the list."
+                    return@setOnClickListener
+                }
+                val entry = CustomHudEntry(label = customLabel, sensorId = selected.id)
+                save(config.copy(customEntries = config.customEntries + entry))
+                rebuildKeepingScroll()
+                statusLine?.text = "Added ${entry.label} · ${selected.sourceName}"
+                android.widget.Toast.makeText(this@MainActivity, "Custom row added", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }, matchWrap(bottom = 5))
     }
 
-    private fun buildDisplaySettings(parent: LinearLayout) {
+        private fun buildDisplaySettings(parent: LinearLayout) {
         val settings = card()
         addSlider(settings, "Text brightness", config.textBrightness, 35, 100, 1, "35%", "100%", { "${it}%" }) {
             save(config.copy(textBrightness = it))
@@ -692,11 +759,9 @@ class MainActivity : Activity() {
     }
 
     private fun sameSensorIds(first: TemperatureSnapshot, second: TemperatureSnapshot): Boolean {
-        val a = first.allSensors
-        val b = second.allSensors
-        if (a.size != b.size) return false
-        for (index in a.indices) if (a[index].id != b[index].id) return false
-        return true
+        val a = first.allSensors.mapTo(HashSet()) { it.id }
+        val b = second.allSensors.mapTo(HashSet()) { it.id }
+        return a == b
     }
 
     private fun allSourceReadings(): List<ThermalReading> {
@@ -723,7 +788,9 @@ class MainActivity : Activity() {
     }
 
     private fun updateValues() {
-        val needsSensorLookup = valueViews.keys.any { it.startsWith(HudConfig.SENSOR_PREFIX) }
+        val needsSensorLookup = valueViews.keys.any {
+            it.startsWith(HudConfig.SENSOR_PREFIX) || it.startsWith("custom:")
+        }
         val sources = if (needsSensorLookup) allSourceReadings() else emptyList()
         valueViews.forEach { (key, view) ->
             val reading = when (key) {
@@ -732,6 +799,11 @@ class MainActivity : Activity() {
                 else -> when {
                     key.startsWith(HudConfig.SENSOR_PREFIX) ->
                         sources.firstOrNull { it.id == key.removePrefix(HudConfig.SENSOR_PREFIX) }
+                    key.startsWith("custom:") -> {
+                        val entryId = key.removePrefix("custom:")
+                        config.customEntries.firstOrNull { it.id == entryId }
+                            ?.let { entry -> sources.firstOrNull { it.id == entry.sensorId } }
+                    }
                     key.startsWith("core") && key.endsWith("Temp") ->
                         key.removePrefix("core").removeSuffix("Temp").toIntOrNull()?.let { snapshot.cpuCores.getOrNull(it) }
                     else -> null

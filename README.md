@@ -1,6 +1,6 @@
 # Temp HUD
 
-Current development version: **0.7.5**.
+Current development version: **0.7.6**.
 
 Compact MangoHud-inspired Android temperature overlay for Android 11+, written in Kotlin using Android's built-in Material-themed Views to keep the APK lean.
 
@@ -17,7 +17,8 @@ Compact MangoHud-inspired Android temperature overlay for Android 11+, written i
 - Any readable thermal-zone sensor can be selected from Browse, and custom rows can pair a custom label with any selected temperature sensor.
 
 ## Layout, sensor and low-allocation fixes in 0.7.5
-- The ScrollView now uses an explicit wrap-content child and does not stretch its viewport. Sensor sections compare the actual catalog IDs before rebuilding, and sensor search filters rows live. Opening Available sensors, CPU/GPU sources, or Custom rows starts a full catalog scan at the next selected poll when the service is running, or a one-off full scan on the visible settings screen if it is stopped.
+- The ScrollView uses a wrap-content child without viewport stretching, including in Android floating-window mode, to avoid blank fill areas. Snapshot broadcasts are ignored while the Activity is paused. Thermal-zone IDs stay in the catalog even when a particular poll temporarily returns N/A, so the entire screen is not rebuilt repeatedly.
+- CPU/GPU source rows and the Available sensors list show the original kernel thermal-zone type and `thermal_zoneNN` ID under every value. The sensor list has an explicit Refresh action. Custom rows are shown before the editor form, each has its own live-value key, and Add confirms success with a toast/status line.
 
 ## Appearance
 - Border-free, text-only HUD by default; no header or load/clock rows. White labels, heat-coloured values, adjustable text brightness, size, refresh interval, optional background opacity, saved position and touch-through lock.

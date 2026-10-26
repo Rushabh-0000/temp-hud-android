@@ -149,7 +149,10 @@ class SensorReader {
                 sourceName = if (uniqueGpu.isEmpty()) "No readable GPU-labelled sensor"
                     else uniqueGpu.joinToString { it.sourceName }
             ) else null,
-            allSensors = values.map { it.asReading() }
+            allSensors = toRead.map { zone ->
+                values.firstOrNull { it.zone.id == zone.id }?.asReading()
+                    ?: ThermalReading(zone.id, zone.type, null, zone.sourceName)
+            }
         )
     }
 
