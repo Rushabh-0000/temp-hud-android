@@ -117,7 +117,9 @@ class OverlayService : Service() {
             return
         }
 
-        pollingThread = HandlerThread("TempHudThermalPoll", Process.THREAD_PRIORITY_BACKGROUND).also { it.start() }
+        // The HUD is visible UI: background priority can make its values lag behind
+        // the app preview under load. Use display priority for this short sampling task.
+        pollingThread = HandlerThread("TempHudThermalPoll", Process.THREAD_PRIORITY_DISPLAY).also { it.start() }
         pollingHandler = Handler(pollingThread!!.looper)
         pollingHandler?.post(ticker)
     }
