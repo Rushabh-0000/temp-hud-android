@@ -60,6 +60,8 @@ class MainActivity : Activity() {
     private var sensorListContainer: LinearLayout? = null
     private var sensorSectionTitle: TextView? = null
     private var sensorRefreshButton: TextView? = null
+    private var overlayControlButton: TextView? = null
+    private var overlayControlStatus: TextView? = null
     private var sensorsExpanded = false
     private var customRowsContainer: LinearLayout? = null
     private var customNameInput: EditText? = null
@@ -78,7 +80,6 @@ class MainActivity : Activity() {
                 catalogReadings = fresh.allSensors
                 if (idsChanged) rebuildSensorRows() else updateSensorRows()
                 updateCustomSensorSpinner()
-                requestCatalogMode(false)
             }
             updateLiveValues()
         }
@@ -91,7 +92,7 @@ class MainActivity : Activity() {
             val cfg = config
             // Live tile sampling only; the full catalogue is refreshed manually.
             val fresh = try {
-                reader.sample(cfg, includeAllForSettings = false)
+                reader.sample(cfg, includeAllForSettings = sensorsExpanded)
             } catch (_: Exception) {
                 TemperatureSnapshot()
             }
@@ -209,6 +210,7 @@ class MainActivity : Activity() {
             setPadding(dp(10), dp(7), dp(10), dp(16))
         }
 
+        buildOverlayControl(content)
         addTileRow(content, listOf("cpuTemp", "gpuTemp"))
         for (firstCore in 0..7 step 2) {
             addTileRow(content, listOf(
@@ -226,6 +228,43 @@ class MainActivity : Activity() {
             ViewGroup.LayoutParams.WRAP_CONTENT
         ))
         setContentView(scroll)
+    }
+
+    private fun buildOverlayControl(parent: LinearLayout) {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(2), dp(2), dp(2), dp(5))
+        }
+        overlayControlStatus = TextView(this).apply {
+            textSize = 10f
+            setTextColor(V2Colors.MUTED)
+            includeFontPadding = false
+            maxLines = 2
+        }
+        row.addView(overlayControlStatus, LinearLayout.LayoutParams(0, -2, 1f).apply {
+            marginEnd = dp(8)
+        })
+        overlayControlButton = smallButton("Ⅱ Pause overlay").apply {
+            setPadding(dp(13), dp(10), dp(13), dp(10))
+            setOnClickListener {
+                saveConfig(config.copy(overlayPaused = !config.overlayPaused))
+            }
+        }
+        row.addView(overlayControlButton, wrapWrap())
+        parent.addView(row, matchWrap(bottom = 6))
+        updateOverlayControl()
+    }
+
+    private fun updateOverlayControl() {
+        overlayControlStatus?.text = when {
+            config.overlayPaused -> "Overlay paused · your selected rows are saved"
+            config.hasActiveRows() -> "Overlay active · pause it without clearing selections"
+            else -> "Overlay off · select a tile or sensor below"
+        }
+        overlayControlButton?.text = if (config.overlayPaused) "▶ Resume overlay" else "Ⅱ Pause overlay"
+        overlayControlButton?.isEnabled = config.overlayPaused || config.hasActiveRows()
+        overlayControlButton?.alpha = if (overlayControlButton?.isEnabled == true) 1f else 0.55f
     }
 
     private fun addTileRow(parent: LinearLayout, keys: List<String>) {
@@ -309,7 +348,7 @@ class MainActivity : Activity() {
         header.setOnClickListener {
             sensorsExpanded = !sensorsExpanded
             updateSensorSectionVisibility()
-            if (sensorsExpanded) refreshSensors()
+            if (sensorsExpanded) refreshSensors() else requestCatalogMode(false)
         }
         parent.addView(header, matchWrap())
 
@@ -333,40 +372,56 @@ class MainActivity : Activity() {
         val container = sensorListContainer ?: return
         container.removeAllViews()
         sensorRows.clear()
-        catalogReadings.forEach { reading ->
-            val row = LinearLayout(this).apply {
+
+        // Two-column cards make long thermal-zone lists much easier to scan.
+        catalogReadings.chunked(2).forEach { pair ->
+            val gridRow = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(8), dp(4), dp(8), dp(4))
-                minimumHeight = dp(42)
-                isClickable = true
-                isFocusable = true
             }
-            val name = TextView(this).apply {
-                text = reading.sourceName
-                textSize = 11f
-                includeFontPadding = false
-                maxLines = 1
-                ellipsize = android.text.TextUtils.TruncateAt.END
+            pair.forEachIndexed { index, reading ->
+                val card = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(12), dp(9), dp(10), dp(8))
+                    minimumHeight = dp(68)
+                    isClickable = true
+                    isFocusable = true
+                }
+                val name = TextView(this).apply {
+                    text = reading.label
+                    textSize = 10f
+                    setTextColor(V2Colors.MUTED)
+                    includeFontPadding = false
+                    maxLines = 1
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                }
+                val value = TextView(this).apply {
+                    textSize = 15f
+                    typeface = Typeface.create("sans-serif-monospace", Typeface.BOLD)
+                    includeFontPadding = false
+                    maxLines = 1
+                    setPadding(0, dp(6), 0, 0)
+                }
+                card.addView(name, LinearLayout.LayoutParams(-1, -2))
+                card.addView(value, LinearLayout.LayoutParams(-1, -2))
+                sensorRows[reading.id] = card to value
+                card.setOnClickListener {
+                    val enabled = !config.selectedThermalSensors.contains(reading.id)
+                    saveConfig(config.withMetric(HudConfig.SENSOR_PREFIX + reading.id, enabled),
+                        requestPermission = enabled)
+                }
+                gridRow.addView(card, LinearLayout.LayoutParams(0, dp(68), 1f).apply {
+                    if (index == 0) marginEnd = dp(5) else marginStart = dp(5)
+                })
             }
-            val value = TextView(this).apply {
-                textSize = 12f
-                typeface = Typeface.create("sans-serif-monospace", Typeface.BOLD)
-                gravity = Gravity.CENTER_VERTICAL or Gravity.END
-                includeFontPadding = false
-                minWidth = dp(65)
-                maxLines = 1
+            if (pair.size == 1) {
+                gridRow.addView(View(this), LinearLayout.LayoutParams(0, dp(68), 1f).apply {
+                    marginStart = dp(5)
+                })
             }
-            row.addView(name, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(7) })
-            row.addView(value, wrapWrap())
-            sensorRows[reading.id] = row to value
-            row.setOnClickListener {
-                val enabled = !config.selectedThermalSensors.contains(reading.id)
-                saveConfig(config.withMetric(HudConfig.SENSOR_PREFIX + reading.id, enabled),
-                    requestPermission = enabled)
-            }
-            container.addView(row, LinearLayout.LayoutParams(-1, -2).apply {
-                bottomMargin = dp(2)
+            container.addView(gridRow, LinearLayout.LayoutParams(-1, -2).apply {
+                bottomMargin = dp(5)
             })
         }
         updateSensorRows()
@@ -380,7 +435,7 @@ class MainActivity : Activity() {
             val reading = liveReadingsById[id] ?: readingsById[id]
             views.second.text = formatTemp(reading)
             views.second.setTextColor(temperatureColor(reading))
-            styleSensorRow(views.first, config.selectedThermalSensors.contains(id))
+            styleSensorRow(views.first, config.selectedThermalSensors.contains(id), reading)
         }
     }
 
@@ -662,11 +717,13 @@ class MainActivity : Activity() {
         next.save(this)
         if (rebuildCustom) rebuildCustomRows()
         updateLiveValues()
+        updateOverlayControl()
         syncOverlayState(requestPermission)
     }
 
     private fun syncOverlayState(requestPermission: Boolean) {
-        if (!config.hasActiveRows()) {
+        updateOverlayControl()
+        if (!config.hasActiveRows() || config.overlayPaused) {
             if (HudConfig.isRunning()) {
                 stopService(Intent(this, OverlayService::class.java))
                 HudConfig.setRunning(false)
@@ -758,14 +815,30 @@ class MainActivity : Activity() {
         else tile.name.setShadowLayer(0f, 0f, 0f, android.graphics.Color.TRANSPARENT)
     }
 
-    private fun styleSensorRow(row: LinearLayout, active: Boolean) {
-        row.background = rounded(
-            if (active) V2Colors.CARD_ACTIVE else V2Colors.CARD,
-            if (active) V2Colors.GREEN else V2Colors.EDGE,
-            1,
-            8
-        )
+    private fun styleSensorRow(row: LinearLayout, active: Boolean, reading: ThermalReading?) {
+        val temperature = reading?.celsius
+        val heat = temperature?.let { HudPalette.heatColor(it, 100) }
+        val heatTinted = heat?.let { mixColor(V2Colors.CARD, it, 0.15f) } ?: V2Colors.CARD
+        val fill = if (active) mixColor(heatTinted, V2Colors.GREEN, 0.10f) else heatTinted
+        val stroke = when {
+            active -> V2Colors.GREEN
+            temperature != null && temperature >= 55f && heat != null -> mixColor(V2Colors.EDGE, heat, 0.55f)
+            else -> V2Colors.EDGE
+        }
+        row.background = rounded(fill, stroke, if (active) 2 else 1, 12)
         row.elevation = dp(if (active) 3f else 0f).toFloat()
+    }
+
+    private fun mixColor(base: Int, tint: Int, amount: Float): Int {
+        val fraction = amount.coerceIn(0f, 1f)
+        return android.graphics.Color.rgb(
+            (android.graphics.Color.red(base) * (1f - fraction) +
+                android.graphics.Color.red(tint) * fraction).toInt().coerceIn(0, 255),
+            (android.graphics.Color.green(base) * (1f - fraction) +
+                android.graphics.Color.green(tint) * fraction).toInt().coerceIn(0, 255),
+            (android.graphics.Color.blue(base) * (1f - fraction) +
+                android.graphics.Color.blue(tint) * fraction).toInt().coerceIn(0, 255)
+        )
     }
 
     private fun formatTemp(reading: ThermalReading?): String =

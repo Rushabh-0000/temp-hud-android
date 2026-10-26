@@ -25,7 +25,8 @@ data class HudConfig(
     val gpuAverageVariant: String = "usr",
     val lockPosition: Boolean = false,
     val positionXDp: Int = 8,
-    val positionYDp: Int = 100
+    val positionYDp: Int = 100,
+    val overlayPaused: Boolean = false
 ) {
     fun save(context: Context) {
         val stable = copy(
@@ -58,6 +59,7 @@ data class HudConfig(
             .putString("cpu_average_variant", stable.cpuAverageVariant)
             .putString("gpu_average_variant", stable.gpuAverageVariant)
             .putBoolean("lock_position", stable.lockPosition)
+            .putBoolean("overlay_paused", stable.overlayPaused)
             .putInt("position_x_dp", stable.positionXDp)
             .putInt("position_y_dp", stable.positionYDp)
             .apply()
@@ -114,7 +116,8 @@ data class HudConfig(
                         gpuAverageVariant = (p.getString("gpu_average_variant", "usr") ?: "usr").normalizedVariant(),
                         lockPosition = p.getBoolean("lock_position", false),
                         positionXDp = p.getInt("position_x_dp", 8).coerceAtLeast(0),
-                        positionYDp = p.getInt("position_y_dp", 100).coerceAtLeast(0)
+                        positionYDp = p.getInt("position_y_dp", 100).coerceAtLeast(0),
+                        overlayPaused = p.getBoolean("overlay_paused", false)
                     )
                     cachedConfig = config
                     config
