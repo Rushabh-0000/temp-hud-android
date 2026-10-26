@@ -28,6 +28,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.withContext
 import java.util.Locale
 import java.util.UUID
@@ -96,7 +98,7 @@ private fun SettingsScreen() {
     val density = LocalDensity.current
     val safeTop = with(density) { WindowInsets.safeDrawing.getTop(this).toDp().value.toInt() }
     var config by remember { mutableStateOf(HudConfig.load(context)) }
-    val snapshot by TemperatureRepository.snapshots.collectAsState()
+    var snapshot by remember { mutableStateOf(TemperatureRepository.snapshots.value) }
     var sensorCatalogSnapshot by remember { mutableStateOf(TemperatureSnapshot()) }
     var overlayActive by remember { mutableStateOf(HudConfig.isRunning(context)) }
     var screenResumed by remember { mutableStateOf(false) }
@@ -133,23 +135,36 @@ private fun SettingsScreen() {
     val latestConfig by rememberUpdatedState(config)
     LaunchedEffect(reader, screenResumed, showAllSensors, showCustomEditor) {
         if (!screenResumed) return@LaunchedEffect
-        while (true) {
-            val current = latestConfig
-            val serviceOwnsPolling = HudConfig.isRunning(context)
-            overlayActive = serviceOwnsPolling
-            val needsCatalog = showAllSensors || showCustomEditor
 
-            // The overlay service is the single sampler while active. The app only
-            // scans thermal files when visible and the service is stopped, or when
-            // the user explicitly opens the sensor/custom-row picker.
-            if (!serviceOwnsPolling || needsCatalog) {
-                val fresh = withContext(Dispatchers.IO) {
-                    reader.sample(current, includeAllForSettings = needsCatalog)
+        // Collect the shared stream only while this activity is resumed. When the
+        // user leaves for a game, this collector and the app's sampler both stop.
+        val snapshotCollector = launch {
+            TemperatureRepository.snapshots.collect { latest -> snapshot = latest }
+        }
+        try {
+            while (true) {
+                val current = latestConfig
+                val serviceOwnsPolling = HudConfig.isRunning(context)
+                overlayActive = serviceOwnsPolling
+                val needsCatalog = showAllSensors || showCustomEditor
+
+                // The overlay service is the sole sampler while active. The app only
+                // scans thermal files when visible and the service is stopped, or when
+                // the user explicitly opens the sensor/custom-row picker.
+                if (!serviceOwnsPolling || needsCatalog) {
+                    val fresh = withContext(Dispatchers.IO) {
+                        reader.sample(current, includeAllForSettings = needsCatalog)
+                    }
+                    if (needsCatalog) sensorCatalogSnapshot = fresh
+                    if (!serviceOwnsPolling) {
+                        TemperatureRepository.publish(fresh)
+                        snapshot = fresh
+                    }
                 }
-                if (needsCatalog) sensorCatalogSnapshot = fresh
-                if (!serviceOwnsPolling) TemperatureRepository.publish(fresh)
+                delay(current.refreshMs.toLong())
             }
-            delay(current.refreshMs.toLong())
+        } finally {
+            snapshotCollector.cancel()
         }
     }
 
