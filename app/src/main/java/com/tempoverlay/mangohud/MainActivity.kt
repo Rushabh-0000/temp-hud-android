@@ -782,11 +782,12 @@ class MainActivity : Activity() {
 
                 sectionTitle("Temperature source")
                 val sourceCard = settingCard(
-                    "Average reading variant",
-                    "Choose which source variant represents the overall CPU and GPU value."
+                    "Thermal source routing",
+                    "Only active `-usr` zones are used. `-step` aliases are ignored; totals average the two selected cluster/sensor readings."
                 )
-                addAverageSelector(sourceCard, "CPU source", config.cpuAverageVariant, true)
-                addAverageSelector(sourceCard, "GPU source", config.gpuAverageVariant, false)
+                sourceCard.addView(label("CPU: cpuss-0-usr + cpuss-1-usr", 10f, Ui.MINT, true)
+                    .apply { setPadding(0, dp(3), 0, dp(5)) }, matchWrap())
+                sourceCard.addView(label("GPU: gpuss-0-usr + gpuss-1-usr", 10f, Ui.BLUE, true), matchWrap())
                 page.addView(sourceCard, matchWrap(bottom = 8))
 
                 sectionTitle("Sampling")
@@ -976,77 +977,82 @@ class MainActivity : Activity() {
 
     private fun buildSourceGroups(parent: LinearLayout, isGpu: Boolean) {
         val grouped = allSourceReadings().mapNotNull { reading ->
-            val display = if (isGpu) SensorSourceLabels.gpuSourceOption(reading) else SensorSourceLabels.cpuCoreOption(reading)
-            val variant = SensorSourceLabels.sourceVariant(reading) ?: return@mapNotNull null
-            if (display == null) return@mapNotNull null
-            SourceOption(reading, display.substringBefore(" · "), variant)
+            val display = if (isGpu) {
+                SensorSourceLabels.gpuSourceOption(reading)
+            } else {
+                SensorSourceLabels.cpuClusterOption(reading) ?: SensorSourceLabels.cpuCoreOption(reading)
+            }
+            if (display == null || SensorSourceLabels.sourceVariant(reading) != "usr") return@mapNotNull null
+            SourceOption(reading, display.substringBefore(" · "), "usr")
         }.groupBy { it.name }.toSortedMap(compareBySourceName())
 
         if (grouped.isEmpty()) {
-            val message = if (isGpu) "No GPU usr/step sources are exposed." else "No CPU usr/step sources are exposed."
+            val message = if (isGpu) {
+                "No readable GPU -usr sources are exposed on this device."
+            } else {
+                "No readable CPU cluster/core -usr sources are exposed on this device."
+            }
             parent.addView(label(message, 11f, Ui.MUTED, false).apply {
-                setPadding(dp(8), dp(6), dp(8), dp(10))
+                setPadding(dp(8), dp(8), dp(8), dp(10))
             })
             return
         }
 
         for ((name, options) in grouped) {
-            val groupCard = card().apply { setPadding(dp(8), dp(4), dp(8), dp(5)) }
-            groupCard.addView(label(name, 12f, if (isGpu) Ui.BLUE else Ui.MINT, true)
-                .apply { setPadding(0, dp(5), 0, dp(2)) })
-            val sourceRow = LinearLayout(this).apply {
+            val groupCard = card().apply {
+                setPadding(dp(10), dp(8), dp(10), dp(9))
+            }
+            val accent = if (isGpu) Ui.BLUE else Ui.MINT
+            val groupHeader = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.TOP
+                gravity = Gravity.CENTER_VERTICAL
             }
-            for (variant in listOf("usr", "step")) {
-                val option = options.firstOrNull { it.variant == variant }
-                val cell = LinearLayout(this).apply {
-                    orientation = LinearLayout.VERTICAL
-                    gravity = Gravity.TOP
-                    setPadding(dp(2), dp(2), dp(4), dp(3))
+            groupHeader.addView(label(name, 12.5f, Ui.WHITE, true),
+                LinearLayout.LayoutParams(0, -2, 1f))
+            groupHeader.addView(label("USR ONLY", 8f, accent, true).apply {
+                letterSpacing = 0.55f
+                setPadding(dp(7), dp(4), dp(7), dp(4))
+                background = rounded(Ui.BG, Ui.EDGE, 8)
+            })
+            groupCard.addView(groupHeader, matchWrap(bottom = 5))
+
+            options.forEach { option ->
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(1), dp(2), dp(1), dp(2))
                 }
-                if (option == null) {
-                    cell.addView(label(if (variant == "usr") "usr —" else "step —", 10f, Ui.MUTED, false)
-                        .apply { setPadding(0, dp(8), 0, dp(8)) }, matchWrap())
-                } else {
-                    val readRow = LinearLayout(this).apply {
-                        orientation = LinearLayout.HORIZONTAL
-                        gravity = Gravity.CENTER_VERTICAL
+                val check = CheckBox(this).apply {
+                    text = if (isGpu) "Show sensor" else "Show reading"
+                    textSize = 10f
+                    setTextColor(Ui.WHITE)
+                    buttonTintList = ColorStateList.valueOf(accent)
+                    isChecked = config.selectedThermalSensors.contains(option.reading.id)
+                    setOnCheckedChangeListener { _, enabled ->
+                        save(config.withMetric(HudConfig.SENSOR_PREFIX + option.reading.id, enabled))
                     }
-                    val check = CheckBox(this).apply {
-                        text = variant
-                        textSize = 10f
-                        setTextColor(Ui.WHITE)
-                        buttonTintList = ColorStateList.valueOf(if (isGpu) Ui.BLUE else Ui.MINT)
-                        isChecked = config.selectedThermalSensors.contains(option.reading.id)
-                        setOnCheckedChangeListener { _, enabled ->
-                            save(config.withMetric(HudConfig.SENSOR_PREFIX + option.reading.id, enabled))
-                        }
-                    }
-                    readRow.addView(check, LinearLayout.LayoutParams(0, dp(38), 1f))
-                    val value = label(temp(option.reading), 10.5f, Ui.MINT, true).apply {
-                        typeface = Typeface.MONOSPACE
-                        gravity = Gravity.CENTER_VERTICAL or Gravity.END
-                        minWidth = dp(54)
-                    }
-                    valueViews[HudConfig.SENSOR_PREFIX + option.reading.id] = value
-                    readRow.addView(value, wrapWrap())
-                    cell.addView(readRow, matchWrap())
-                    // Keep the full kernel source visible beneath the short UI label.
-                    cell.addView(label(option.reading.sourceName, 8.5f, Ui.MUTED, false).apply {
-                        isSingleLine = true
-                        ellipsize = android.text.TextUtils.TruncateAt.END
-                        setPadding(dp(2), 0, 0, 0)
-                    }, LinearLayout.LayoutParams(-1, dp(16)))
                 }
-                sourceRow.addView(cell, LinearLayout.LayoutParams(0, -2, 1f))
+                row.addView(check, LinearLayout.LayoutParams(0, dp(38), 1f))
+                row.addView(label(temp(option.reading), 11f, accent, true).apply {
+                    typeface = Typeface.create("sans-serif-monospace", Typeface.BOLD)
+                    gravity = Gravity.CENTER_VERTICAL or Gravity.END
+                    minWidth = dp(60)
+                }, wrapWrap())
+                groupCard.addView(row, matchWrap())
+
+                groupCard.addView(label(option.reading.sourceName, 8.5f, Ui.MUTED, false).apply {
+                    isSingleLine = true
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                    setPadding(dp(2), 0, 0, dp(4))
+                }, LinearLayout.LayoutParams(-1, dp(16)))
+                valueViews[HudConfig.SENSOR_PREFIX + option.reading.id] =
+                    (row.getChildAt(1) as TextView)
             }
-            groupCard.addView(sourceRow, matchWrap())
-            parent.addView(groupCard, matchWrap(bottom = 5))
+            parent.addView(groupCard, matchWrap(bottom = 7))
         }
     }
 
-        private fun buildAllSensors(parent: LinearLayout) {
+    private fun buildAllSensors(parent: LinearLayout) {
         val search = EditText(this).apply {
             hint = "Search sensor type"
             setTextColor(Ui.WHITE); setHintTextColor(Ui.MUTED); textSize = 13f; setSingleLine(true)
