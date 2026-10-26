@@ -1,595 +1,684 @@
 package com.tempoverlay.mangohud
 
+import android.app.Activity
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.res.ColorStateList
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.HandlerThread
+import android.os.Looper
+import android.os.Process
+import android.os.SystemClock
 import android.provider.Settings
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
+import android.view.Gravity
+import android.view.View
+import android.view.WindowManager
+import android.widget.ArrayAdapter
+import android.widget.Button
+import android.widget.CheckBox
+import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.RadioButton
+import android.widget.RadioGroup
+import android.widget.ScrollView
+import android.widget.SeekBar
+import android.widget.Spinner
+import android.widget.Switch
+import android.widget.TextView
 import java.util.Locale
-import java.util.UUID
-import kotlin.math.roundToInt
 
-private val Bg = Color(0xFF080C11)
-private val Panel = Color(0xFF111922)
-private val Mint = Color(0xFF8CFFD0)
-private val Blue = Color(0xFF8FB5FF)
-private val MainText = Color(0xFFF0F4F8)
-private val Muted = Color(0xFF8D9BAA)
-private val Edge = Color(0xFF293643)
-
-private val CleanTypography: Typography = Typography().let { t ->
-    Typography(
-        displayLarge = t.displayLarge.copy(fontFamily = FontFamily.SansSerif),
-        displayMedium = t.displayMedium.copy(fontFamily = FontFamily.SansSerif),
-        displaySmall = t.displaySmall.copy(fontFamily = FontFamily.SansSerif),
-        headlineLarge = t.headlineLarge.copy(fontFamily = FontFamily.SansSerif),
-        headlineMedium = t.headlineMedium.copy(fontFamily = FontFamily.SansSerif),
-        headlineSmall = t.headlineSmall.copy(fontFamily = FontFamily.SansSerif),
-        titleLarge = t.titleLarge.copy(fontFamily = FontFamily.SansSerif),
-        titleMedium = t.titleMedium.copy(fontFamily = FontFamily.SansSerif),
-        titleSmall = t.titleSmall.copy(fontFamily = FontFamily.SansSerif),
-        bodyLarge = t.bodyLarge.copy(fontFamily = FontFamily.SansSerif),
-        bodyMedium = t.bodyMedium.copy(fontFamily = FontFamily.SansSerif),
-        bodySmall = t.bodySmall.copy(fontFamily = FontFamily.SansSerif),
-        labelLarge = t.labelLarge.copy(fontFamily = FontFamily.SansSerif),
-        labelMedium = t.labelMedium.copy(fontFamily = FontFamily.SansSerif),
-        labelSmall = t.labelSmall.copy(fontFamily = FontFamily.SansSerif)
-    )
+private object Ui {
+    const val BG = 0xFF080C11.toInt()
+    const val PANEL = 0xFF111922.toInt()
+    const val PANEL_ALT = 0xFF18232E.toInt()
+    const val MINT = 0xFF8CFFD0.toInt()
+    const val BLUE = 0xFF8FB5FF.toInt()
+    const val WHITE = 0xFFF0F4F8.toInt()
+    const val MUTED = 0xFF8D9BAA.toInt()
+    const val EDGE = 0xFF293643.toInt()
+    const val RED = 0xFFFF8888.toInt()
 }
+private data class SourceOption(val reading: ThermalReading, val name: String, val variant: String)
 
-private val coreKeys = (0..7).map { "core${it}Temp" }
-private val coreLabels = (0..7).map { "CPU $it" }
+class MainActivity : Activity() {
+    private val uiHandler = Handler(Looper.getMainLooper())
+    private val reader = SensorReader()
+    private var config = HudConfig()
+    private var snapshot = TemperatureSnapshot()
+    private var catalogSnapshot = TemperatureSnapshot()
+    private var screenActive = false
+    private var receiverRegistered = false
+    private var samplingThread: HandlerThread? = null
+    private var samplingHandler: Handler? = null
+    private var scrollView: ScrollView? = null
+    private var statusView: TextView? = null
+    private var statusLine: TextView? = null
+    private var showCores = false
+    private var showGpuSources = false
+    private var showAllSensors = false
+    private var showCustomEditor = false
+    private var showDisplaySettings = false
+    private var searchText = ""
+    private val valueViews = linkedMapOf<String, TextView>()
 
-class MainActivity : ComponentActivity() {
-    override fun onStop() {
-        super.onStop()
-        // Once the user leaves for a game, discard the settings UI task so only
-        // the lightweight foreground overlay remains active. The launcher reopens it.
-        if (HudConfig.isRunning(this) && !isChangingConfigurations) {
-            finishAndRemoveTask()
+    private val snapshotReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action != OverlayService.ACTION_SNAPSHOT) return
+            val raw = intent.getStringExtra(OverlayService.EXTRA_SNAPSHOT) ?: return
+            val fresh = TemperatureSnapshot.fromJson(raw) ?: return
+            snapshot = fresh
+            statusView?.text = "RUNNING"
+            statusView?.setTextColor(Ui.MINT)
+            updateValues()
+        }
+    }
+
+    private val poller = object : Runnable {
+        override fun run() {
+            val bgHandler = samplingHandler ?: return
+            if (!screenActive || HudConfig.isRunning(this@MainActivity)) return
+            val start = SystemClock.uptimeMillis()
+            val cfg = config
+            val fullScan = showAllSensors || showCustomEditor
+            val fresh = reader.sample(cfg, includeAllForSettings = fullScan)
+            snapshot = fresh
+            if (fullScan) catalogSnapshot = fresh
+            updateValues()
+            val elapsed = SystemClock.uptimeMillis() - start
+            bgHandler.postDelayed(this, (cfg.refreshMs.toLong() - elapsed).coerceAtLeast(100L))
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.statusBarColor = android.graphics.Color.rgb(8, 12, 17)
-        window.navigationBarColor = android.graphics.Color.rgb(8, 12, 17)
-        window.setDecorFitsSystemWindows(false)
-        setContent {
-            MaterialTheme(
-                colorScheme = darkColorScheme(
-                    primary = Mint,
-                    secondary = Blue,
-                    background = Bg,
-                    surface = Panel,
-                    onPrimary = Bg,
-                    onBackground = MainText,
-                    onSurface = MainText
-                ),
-                typography = CleanTypography
-            ) {
-                Surface(Modifier.fillMaxSize(), color = Bg) { SettingsScreen() }
+        config = HudConfig.load(this)
+        window.statusBarColor = Ui.BG
+        window.navigationBarColor = Ui.BG
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes = window.attributes.apply {
+                layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_NEVER
             }
         }
-    }
-}
-
-@Composable
-private fun SettingsScreen() {
-    val context = LocalContext.current
-    val configuration = LocalConfiguration.current
-    val density = LocalDensity.current
-    val safeTop = with(density) { WindowInsets.safeDrawing.getTop(this).toDp().value.toInt() }
-    var config by remember { mutableStateOf(HudConfig.load(context)) }
-    val snapshotState = remember { mutableStateOf(TemperatureSnapshot()) }
-    var snapshot by snapshotState
-    var sensorCatalogSnapshot by remember { mutableStateOf(TemperatureSnapshot()) }
-    var overlayActive by remember { mutableStateOf(HudConfig.isRunning(context)) }
-    var screenResumed by remember { mutableStateOf(false) }
-    var status by remember { mutableStateOf("") }
-    var search by remember { mutableStateOf("") }
-    var showAllSensors by remember { mutableStateOf(false) }
-    var showCores by remember { mutableStateOf(false) }
-    var showGpuSources by remember { mutableStateOf(false) }
-    var showControls by remember { mutableStateOf(false) }
-    var showCustomEditor by remember { mutableStateOf(false) }
-    var customLabel by remember { mutableStateOf("") }
-    var customSensorId by remember { mutableStateOf("") }
-    var sensorMenuOpen by remember { mutableStateOf(false) }
-
-    val lifecycle = (context as? ComponentActivity)?.lifecycle
-    DisposableEffect(lifecycle) {
-        if (lifecycle == null) {
-            screenResumed = true
-            onDispose { }
-        } else {
-            val observer = LifecycleEventObserver { _, event ->
-                when (event) {
-                    Lifecycle.Event.ON_RESUME -> screenResumed = true
-                    Lifecycle.Event.ON_PAUSE, Lifecycle.Event.ON_STOP, Lifecycle.Event.ON_DESTROY -> screenResumed = false
-                    else -> Unit
-                }
-            }
-            lifecycle.addObserver(observer)
-            screenResumed = lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
-            onDispose { lifecycle.removeObserver(observer) }
-        }
+        renderUi()
     }
 
-    val reader = remember { SensorReader() }
-    val latestConfig by rememberUpdatedState(config)
-    val snapshotReceiver = remember(context) {
-        object : BroadcastReceiver() {
-            override fun onReceive(receiverContext: Context, intent: Intent) {
-                if (intent.action != OverlayService.ACTION_SNAPSHOT) return
-                val raw = intent.getStringExtra(OverlayService.EXTRA_SNAPSHOT) ?: return
-                TemperatureSnapshot.fromJson(raw)?.let { snapshotState.value = it }
-                overlayActive = true
-            }
-        }
-    }
-
-    DisposableEffect(context, screenResumed, snapshotReceiver) {
-        if (!screenResumed) {
-            onDispose { }
-        } else {
-            val filter = IntentFilter(OverlayService.ACTION_SNAPSHOT)
+    override fun onStart() {
+        super.onStart()
+        if (!receiverRegistered) {
             try {
+                val filter = IntentFilter(OverlayService.ACTION_SNAPSHOT)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    context.registerReceiver(snapshotReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+                    registerReceiver(snapshotReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
                 } else {
                     @Suppress("DEPRECATION")
-                    context.registerReceiver(snapshotReceiver, filter)
+                    registerReceiver(snapshotReceiver, filter)
                 }
+                receiverRegistered = true
             } catch (_: Exception) { }
-            onDispose {
-                try { context.unregisterReceiver(snapshotReceiver) } catch (_: Exception) { }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        screenActive = true
+        config = HudConfig.load(this)
+        if (HudConfig.isRunning(this)) {
+            requestCatalogOnce()
+        } else {
+            startSampler()
+        }
+        statusView?.text = if (HudConfig.isRunning(this)) "RUNNING" else "READY"
+        statusView?.setTextColor(if (HudConfig.isRunning(this)) Ui.MINT else Ui.MUTED)
+        updateValues()
+    }
+
+    override fun onPause() {
+        screenActive = false
+        stopSampler()
+        super.onPause()
+    }
+
+    override fun onStop() {
+        if (receiverRegistered) {
+            try { unregisterReceiver(snapshotReceiver) } catch (_: Exception) { }
+            receiverRegistered = false
+        }
+        super.onStop()
+        if (HudConfig.isRunning(this) && !isChangingConfigurations) finishAndRemoveTask()
+    }
+
+    override fun onDestroy() {
+        stopSampler()
+        super.onDestroy()
+    }
+
+    private fun startSampler() {
+        stopSampler()
+        samplingThread = HandlerThread("TempHudSettings", Process.THREAD_PRIORITY_BACKGROUND).also { it.start() }
+        samplingHandler = Handler(samplingThread!!.looper)
+        samplingHandler?.post {
+            val first = reader.sample(config, includeAllForSettings = true)
+            uiHandler.post {
+                if (!screenActive || HudConfig.isRunning(this)) return@post
+                snapshot = first
+                catalogSnapshot = first
+                updateValues()
+                samplingHandler?.removeCallbacks(poller)
+                samplingHandler?.postDelayed(poller, config.refreshMs.toLong())
             }
         }
     }
 
-    LaunchedEffect(reader, screenResumed, showAllSensors, showCustomEditor, showCores, showGpuSources) {
-        if (!screenResumed) return@LaunchedEffect
-        while (true) {
-            val current = latestConfig
-            val serviceOwnsPolling = HudConfig.isRunning(context)
-            overlayActive = serviceOwnsPolling
-            val needsCatalog = showAllSensors || showCustomEditor || showCores || showGpuSources
-
-            // The separate overlay process broadcasts the exact sample while active.
-            // The UI samples only if the service is stopped, or a picker needs all zones.
-            if (!serviceOwnsPolling || needsCatalog) {
-                val fresh = withContext(Dispatchers.IO) {
-                    reader.sample(current, includeAllForSettings = needsCatalog)
-                }
-                if (needsCatalog) sensorCatalogSnapshot = fresh
-                if (!serviceOwnsPolling) snapshotState.value = fresh
-            }
-            delay(current.refreshMs.toLong())
-        }
+    private fun stopSampler() {
+        samplingHandler?.removeCallbacksAndMessages(null)
+        samplingThread?.quitSafely()
+        samplingHandler = null
+        samplingThread = null
     }
 
-    fun save(next: HudConfig) {
+    private fun requestCatalogOnce() {
+        Thread({
+            val fresh = reader.sample(HudConfig.load(this), includeAllForSettings = true)
+            uiHandler.post {
+                if (!screenActive) return@post
+                catalogSnapshot = fresh
+                if (!HudConfig.isRunning(this)) snapshot = fresh
+                updateValues()
+                rebuildKeepingScroll()
+            }
+        }, "TempHudCatalog").apply { priority = Thread.MIN_PRIORITY; start() }
+    }
+
+    private fun scanCatalog() {
+        val cfg = config
+        Thread({
+            val fresh = reader.sample(cfg, includeAllForSettings = true)
+            uiHandler.post {
+                if (!screenActive) return@post
+                catalogSnapshot = fresh
+                if (!HudConfig.isRunning(this)) snapshot = fresh
+                updateValues()
+                rebuildKeepingScroll()
+            }
+        }, "TempHudSensorScan").apply { priority = Thread.MIN_PRIORITY; start() }
+    }
+
+    private fun save(next: HudConfig) {
         config = next
-        next.save(context)
+        next.save(this)
+        updateValues()
     }
 
-    fun startOverlay() {
-        if (!Settings.canDrawOverlays(context)) {
-            status = "Allow Display over other apps, then return here."
-            context.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}")))
+    private fun startOverlay() {
+        if (!Settings.canDrawOverlays(this)) {
+            statusLine?.text = "Allow Display over other apps, then return here."
+            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
             return
         }
         try {
-            val intent = Intent(context, OverlayService::class.java).setAction(OverlayService.ACTION_START)
-            HudConfig.setRunning(context, true)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent) else context.startService(intent)
-            overlayActive = true
-            status = "Overlay applied."
+            HudConfig.setRunning(this, true)
+            val intent = Intent(this, OverlayService::class.java).setAction(OverlayService.ACTION_START)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent) else startService(intent)
+            statusLine?.text = "Overlay started."
+            statusView?.text = "RUNNING"
+            statusView?.setTextColor(Ui.MINT)
+            stopSampler()
         } catch (e: Exception) {
-            HudConfig.setRunning(context, false)
-            overlayActive = false
-            status = "Could not start overlay: ${e.javaClass.simpleName}"
+            HudConfig.setRunning(this, false)
+            statusLine?.text = "Could not start overlay: ${e.javaClass.simpleName}"
+            statusView?.text = "READY"
         }
     }
 
-    fun stopOverlay() {
-        context.stopService(Intent(context, OverlayService::class.java))
-        HudConfig.setRunning(context, false)
-        overlayActive = false
-        status = "Overlay stopped."
+    private fun stopOverlay() {
+        stopService(Intent(this, OverlayService::class.java))
+        HudConfig.setRunning(this, false)
+        statusView?.text = "READY"
+        statusView?.setTextColor(Ui.MUTED)
+        statusLine?.text = "Overlay stopped."
+        if (screenActive) startSampler()
     }
 
-    fun temp(reading: ThermalReading?): String =
-        reading?.celsius?.let { String.format(Locale.US, "%.1f°C", it) } ?: "N/A"
+    private fun renderUi() {
+        valueViews.clear()
+        val scroll = ScrollView(this).apply { setBackgroundColor(Ui.BG); clipToPadding = false; isFillViewport = true }
+        val column = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), dp(10), dp(14), dp(18))
+            setBackgroundColor(Ui.BG)
+        }
+        scroll.addView(column, ScrollView.LayoutParams(-1, -2))
+        scrollView = scroll
+        setContentView(scroll)
 
-    val sortedSensors = sensorCatalogSnapshot.allSensors.sortedWith(
-        compareBy<ThermalReading> { it.label }.thenBy { it.id }
-    )
-    val filteredSensors = sortedSensors.filter {
-        val haystack = "${it.label} ${it.id} ${it.sourceName}".lowercase(Locale.US)
-        haystack.contains(search.trim().lowercase(Locale.US))
+        val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        val logo = TextView(this).apply {
+            text = "TH"; textSize = 15f; typeface = Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER
+            setTextColor(Ui.MINT); background = rounded(Ui.PANEL_ALT, Ui.EDGE, 12)
+        }
+        header.addView(logo, LinearLayout.LayoutParams(dp(42), dp(42)))
+        val titleCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; setPadding(dp(10), 0, 0, 0)
+        }
+        titleCol.addView(label("Temp HUD", 20f, Ui.WHITE, true))
+        titleCol.addView(label("CPU & GPU TEMPERATURES", 10f, Ui.MUTED, false))
+        header.addView(titleCol, LinearLayout.LayoutParams(0, -2, 1f))
+        statusView = label(if (HudConfig.isRunning(this)) "RUNNING" else "READY", 10f,
+            if (HudConfig.isRunning(this)) Ui.MINT else Ui.MUTED, true).apply {
+            gravity = Gravity.CENTER; setPadding(dp(10), dp(7), dp(10), dp(7))
+            background = rounded(Ui.PANEL, Ui.EDGE, 18)
+        }
+        header.setPadding(0, dp(2), 0, dp(8))
+        header.addView(statusView)
+        column.addView(header)
+
+        val overall = card()
+        addOverallRow(overall, "CPU", "cpuTemp", config.showCpuTemp)
+        addOverallRow(overall, "GPU", "gpuTemp", config.showGpuTemp)
+        column.addView(overall, matchWrap())
+        addAverageSelector(column, "CPU average source", config.cpuAverageVariant, true)
+        addAverageSelector(column, "GPU average source", config.gpuAverageVariant, false)
+
+        column.addView(divider(), matchWrap(top = 7, bottom = 7))
+        addExpandableHeader(column, "CPU cores", coreCountLabel(), showCores, Ui.MINT) {
+            showCores = !showCores
+            if (showCores && allSourceReadings().isEmpty()) scanCatalog() else rebuildKeepingScroll()
+        }
+        if (showCores) buildSourceGroups(column, false)
+
+        column.addView(divider(), matchWrap(top = 7, bottom = 7))
+        addExpandableHeader(column, "GPU cores", gpuCountLabel(), showGpuSources, Ui.BLUE) {
+            showGpuSources = !showGpuSources
+            if (showGpuSources && allSourceReadings().isEmpty()) scanCatalog() else rebuildKeepingScroll()
+        }
+        if (showGpuSources) buildSourceGroups(column, true)
+
+        column.addView(divider(), matchWrap(top = 7, bottom = 7))
+        addExpandableHeader(column, "Available sensors", "${allSourceReadings().size}", showAllSensors, Ui.MINT) {
+            showAllSensors = !showAllSensors
+            if (showAllSensors) scanCatalog() else rebuildKeepingScroll()
+        }
+        if (showAllSensors) buildAllSensors(column)
+
+        column.addView(divider(), matchWrap(top = 7, bottom = 7))
+        addExpandableHeader(column, "Custom rows", "${config.customEntries.size}", showCustomEditor, Ui.MINT) {
+            showCustomEditor = !showCustomEditor
+            if (showCustomEditor) scanCatalog() else rebuildKeepingScroll()
+        }
+        if (showCustomEditor) buildCustomRows(column)
+
+        column.addView(divider(), matchWrap(top = 7, bottom = 7))
+        val refreshCard = card()
+        addSlider(refreshCard, "Refresh interval", config.refreshMs, 500, 5000, 50,
+            "0.50 s", "5.00 s", { String.format(Locale.US, "%.2f s", it / 1000f) }) {
+            save(config.copy(refreshMs = it))
+            restartSamplerForNewInterval()
+        }
+        column.addView(refreshCard, matchWrap())
+
+        column.addView(button(if (showDisplaySettings) "Hide display settings" else "Display settings", true).apply {
+            setOnClickListener { showDisplaySettings = !showDisplaySettings; rebuildKeepingScroll() }
+        }, matchWrap(top = 8, bottom = 3))
+        if (showDisplaySettings) buildDisplaySettings(column)
+
+        val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        actions.addView(button("Apply / start", false).apply {
+            setOnClickListener { config.save(this@MainActivity); startOverlay() }
+        }, LinearLayout.LayoutParams(0, dp(46), 1f).apply { marginEnd = dp(6) })
+        actions.addView(button("Stop", true).apply { setOnClickListener { stopOverlay() } },
+            LinearLayout.LayoutParams(0, dp(46), 1f).apply { marginStart = dp(6) })
+        column.addView(actions, matchWrap(top = 10))
+        statusLine = label("", 11f, Ui.MINT, false).apply { setPadding(0, dp(8), 0, 0) }
+        column.addView(statusLine)
+        column.addView(label("Android 11+ · local only · no analytics or updater", 10f, Ui.MUTED, false)
+            .apply { setPadding(0, dp(8), 0, 0) })
+        updateValues()
     }
-    val cpuCoreSensorOptions = sortedSensors.mapNotNull { reading ->
-        SensorSourceLabels.cpuCoreOption(reading)?.let { reading to it }
+
+    private fun restartSamplerForNewInterval() {
+        if (screenActive && !HudConfig.isRunning(this)) startSampler()
+        Intent(this, OverlayService::class.java).setAction(OverlayService.ACTION_START).let {
+            if (HudConfig.isRunning(this)) {
+                try { startService(it) } catch (_: Exception) { }
+            }
+        }
     }
-    val gpuSensorOptions = sortedSensors.mapNotNull { reading ->
-        SensorSourceLabels.gpuSourceOption(reading)?.let { reading to it }
+
+    private fun rebuildKeepingScroll() {
+        val y = scrollView?.scrollY ?: 0
+        renderUi()
+        scrollView?.post { scrollView?.scrollTo(0, y) }
     }
-    val selectedCustomSensor = sortedSensors.firstOrNull { it.id == customSensorId }
-        ?: sortedSensors.firstOrNull()
-    val screenMaxX = (configuration.screenWidthDp - 8).coerceAtLeast(0)
-    val estimatedHudHeight = config.selectedCount() * 16 + 10
-    val screenMaxY = (configuration.screenHeightDp - estimatedHudHeight - 8).coerceAtLeast(safeTop + 16)
-    val screenMinY = (safeTop + 16).coerceAtMost(screenMaxY)
 
-    Column(
-        Modifier.fillMaxSize()
-            .windowInsetsPadding(WindowInsets.safeDrawing)
-            .background(Bg)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 13.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(bottom = 5.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                Modifier.size(38.dp).background(Mint.copy(alpha = 0.14f), RoundedCornerShape(11.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("TH", color = Mint, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-            }
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                Text("Temp HUD", color = MainText, fontSize = 19.sp, fontWeight = FontWeight.Bold)
-                Text("CPU & GPU TEMPERATURES", color = Muted, fontSize = 10.sp, letterSpacing = 0.8.sp)
-            }
-            Surface(
-                color = if (overlayActive) Color(0xFF15392D) else Panel,
-                shape = RoundedCornerShape(50),
-                border = androidx.compose.foundation.BorderStroke(1.dp, if (overlayActive) Mint.copy(alpha = 0.5f) else Edge)
-            ) {
-                Text(
-                    if (overlayActive) "RUNNING" else "READY",
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                    color = if (overlayActive) Mint else Muted,
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
+    private fun addOverallRow(parent: LinearLayout, title: String, key: String, checked: Boolean) {
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(9), dp(5), dp(7), dp(5)) }
+        row.addView(label(title, 14f, Ui.WHITE, true), LinearLayout.LayoutParams(0, -2, 1f))
+        val value = label("N/A", 13f, Ui.MINT, true).apply { typeface = Typeface.MONOSPACE; gravity = Gravity.END or Gravity.CENTER_VERTICAL }
+        valueViews[key] = value
+        row.addView(value, LinearLayout.LayoutParams(dp(86), -2))
+        val check = CheckBox(this).apply {
+            buttonTintList = ColorStateList.valueOf(Ui.MINT)
+            isChecked = checked
+            setOnCheckedChangeListener { _, enabled ->
+                save(if (key == "cpuTemp") config.copy(showCpuTemp = enabled) else config.copy(showGpuTemp = enabled))
             }
         }
+        row.addView(check, LinearLayout.LayoutParams(dp(42), dp(42)))
+        parent.addView(row, matchWrap())
+    }
 
-        // Overall values and toggles.
-        CompactSensorRow(
-            label = "CPU",
-            value = temp(snapshot.cpuOverall),
-            detail = null,
-            checked = config.showCpuTemp,
-            valueColor = snapshot.cpuOverall?.celsius?.let { Color(HudPalette.heatColor(it, config.textBrightness)) } ?: Muted,
-            onChecked = { save(config.copy(showCpuTemp = it)) }
-        )
-        CompactSensorRow(
-            label = "GPU",
-            value = temp(snapshot.gpuOverall),
-            detail = null,
-            checked = config.showGpuTemp,
-            valueColor = snapshot.gpuOverall?.celsius?.let { Color(HudPalette.heatColor(it, config.textBrightness)) } ?: Muted,
-            onChecked = { save(config.copy(showGpuTemp = it)) }
-        )
+    private fun addAverageSelector(parent: LinearLayout, title: String, current: String, cpu: Boolean) {
+        val box = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(9), dp(2), dp(9), dp(2)) }
+        box.addView(label(title, 11f, Ui.MUTED, false), LinearLayout.LayoutParams(0, -2, 1f))
+        val group = RadioGroup(this).apply { orientation = RadioGroup.HORIZONTAL }
+        val usr = RadioButton(this).apply {
+            text = "usr"; textSize = 11f; setTextColor(Ui.WHITE)
+            buttonTintList = ColorStateList.valueOf(if (cpu) Ui.MINT else Ui.BLUE)
+            id = View.generateViewId(); isChecked = current != "step"
+        }
+        val step = RadioButton(this).apply {
+            text = "step"; textSize = 11f; setTextColor(Ui.WHITE)
+            buttonTintList = ColorStateList.valueOf(if (cpu) Ui.MINT else Ui.BLUE)
+            id = View.generateViewId(); isChecked = current == "step"
+        }
+        group.addView(usr); group.addView(step)
+        group.setOnCheckedChangeListener { _, checkedId ->
+            val value = if (checkedId == step.id) "step" else "usr"
+            if (cpu && config.cpuAverageVariant != value) save(config.copy(cpuAverageVariant = value))
+            if (!cpu && config.gpuAverageVariant != value) save(config.copy(gpuAverageVariant = value))
+        }
+        box.addView(group)
+        parent.addView(box, matchWrap())
+    }
 
-        Divider(color = Edge, thickness = 0.7.dp)
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Text("CPU cores", color = MainText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-            Text("${(0..7).count { config.isEnabled(coreKeys[it]) }}/8", color = Muted, fontSize = 11.sp)
-            TextButton(onClick = { showCores = !showCores }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)) {
-                Text(if (showCores) "Hide" else "Edit", color = Mint, fontSize = 11.sp)
-            }
-        }
-        if (showCores) {
-            for (index in 0..7) {
-                val reading = snapshot.cpuCores.getOrNull(index)
-                CompactSensorRow(
-                    label = coreLabels[index],
-                    value = temp(reading),
-                    detail = reading?.sourceName,
-                    checked = config.isEnabled(coreKeys[index]),
-                    valueColor = reading?.celsius?.let { Color(HudPalette.heatColor(it, config.textBrightness)) } ?: Muted,
-                    onChecked = { save(config.withMetric(coreKeys[index], it)) }
-                )
-            }
-            if (cpuCoreSensorOptions.isNotEmpty()) {
-                Text("Sensor source variants · usr / step", color = Muted, fontSize = 10.sp)
-                cpuCoreSensorOptions.forEach { (reading, optionLabel) ->
-                    CompactSensorRow(
-                        label = optionLabel,
-                        value = temp(reading),
-                        detail = "${reading.label} · ${reading.id}",
-                        checked = config.selectedThermalSensors.contains(reading.id),
-                        valueColor = reading.celsius?.let { Color(HudPalette.heatColor(it, config.textBrightness)) } ?: Muted,
-                        onChecked = { save(config.withMetric(HudConfig.SENSOR_PREFIX + reading.id, it)) }
-                    )
-                }
-            } else {
-                Text("No per-core source variants are exposed by this device.", color = Muted, fontSize = 10.sp)
-            }
-        }
+    private fun addExpandableHeader(parent: LinearLayout, title: String, count: String, expanded: Boolean, accent: Int, onClick: () -> Unit) {
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(3), dp(3), dp(1), dp(3)) }
+        row.addView(label(title, 13f, Ui.WHITE, true), LinearLayout.LayoutParams(0, dp(40), 1f))
+        row.addView(label(count, 10f, Ui.MUTED, false), wrapWrap(start = 5))
+        row.addView(button(if (expanded) "Hide" else "Edit", true, accent).apply {
+            setPadding(dp(8), 0, dp(8), 0); minHeight = dp(34); minimumHeight = dp(34)
+            setOnClickListener { onClick() }
+        }, wrapWrap(start = 6))
+        parent.addView(row, matchWrap())
+    }
 
-        Divider(color = Edge, thickness = 0.7.dp)
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Text("GPU cores / sources", color = MainText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-            Text("${gpuSensorOptions.count { config.selectedThermalSensors.contains(it.first.id) }}/${gpuSensorOptions.size}",
-                color = Muted, fontSize = 11.sp)
-            TextButton(
-                onClick = {
-                    val allOn = gpuSensorOptions.isNotEmpty() && gpuSensorOptions.all { config.selectedThermalSensors.contains(it.first.id) }
-                    var next = config
-                    gpuSensorOptions.forEach { (reading, _) ->
-                        next = next.withMetric(HudConfig.SENSOR_PREFIX + reading.id, !allOn)
-                    }
-                    save(next)
-                },
-                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
-            ) {
-                Text(if (gpuSensorOptions.isNotEmpty() && gpuSensorOptions.all { config.selectedThermalSensors.contains(it.first.id) }) "None" else "All",
-                    color = Blue, fontSize = 10.sp)
+    private fun buildSourceGroups(parent: LinearLayout, isGpu: Boolean) {
+        val grouped = allSourceReadings().mapNotNull { reading ->
+            val text = if (isGpu) SensorSourceLabels.gpuSourceOption(reading) else SensorSourceLabels.cpuCoreOption(reading)
+            text?.let {
+                val name = it.substringBefore(" · ")
+                val variant = it.substringAfter(" · ", "")
+                SourceOption(reading, name, if (variant == "step") "step" else if (variant == "usr") "usr" else "")
             }
-            TextButton(onClick = { showGpuSources = !showGpuSources }, contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) {
-                Text(if (showGpuSources) "Hide" else "Edit", color = Blue, fontSize = 11.sp)
-            }
-        }
-        if (showGpuSources) {
-            if (gpuSensorOptions.isEmpty()) {
-                Text("No GPU-labelled thermal zones are exposed by this phone.", color = Muted, fontSize = 10.sp)
-            } else {
-                Text("Select each available GPU-labelled sensor separately.", color = Muted, fontSize = 10.sp)
-                gpuSensorOptions.forEach { (reading, optionLabel) ->
-                    CompactSensorRow(
-                        label = optionLabel,
-                        value = temp(reading),
-                        detail = "${reading.label} · ${reading.id}",
-                        checked = config.selectedThermalSensors.contains(reading.id),
-                        valueColor = reading.celsius?.let { Color(HudPalette.heatColor(it, config.textBrightness)) } ?: Muted,
-                        onChecked = { save(config.withMetric(HudConfig.SENSOR_PREFIX + reading.id, it)) }
-                    )
-                }
-            }
-        }
+        }.groupBy { it.name }.toSortedMap(compareBySourceName())
 
-        Divider(color = Edge, thickness = 0.7.dp)
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Text("Available sensors", color = MainText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-            Text("${sortedSensors.size}", color = Muted, fontSize = 11.sp)
-            TextButton(onClick = { showAllSensors = !showAllSensors }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)) {
-                Text(if (showAllSensors) "Hide" else "Browse", color = Mint, fontSize = 11.sp)
-            }
-        }
-        if (showAllSensors) {
-            OutlinedTextField(
-                value = search,
-                onValueChange = { search = it },
-                placeholder = { Text("Search sensor name", fontSize = 12.sp) },
-                singleLine = true,
-                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, color = MainText),
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(10.dp)
+        if (grouped.isEmpty()) {
+            parent.addView(label(if (isGpu) "No GPU-labelled thermal sources are exposed." else "No per-core CPU sources are exposed.",
+                11f, Ui.MUTED, false).apply { setPadding(dp(8), dp(6), dp(8), dp(10) })
             )
-            Text("Turn on a sensor to add its temperature to the overlay.", color = Muted, fontSize = 10.sp)
-            filteredSensors.forEach { sensor ->
-                val key = HudConfig.SENSOR_PREFIX + sensor.id
-                CompactSensorRow(
-                    label = sensor.label,
-                    value = temp(sensor),
-                    detail = "${sensor.id} · ${sensor.sourceName}",
-                    checked = config.selectedThermalSensors.contains(sensor.id),
-                    valueColor = sensor.celsius?.let { Color(HudPalette.heatColor(it, config.textBrightness)) } ?: Muted,
-                    onChecked = { save(config.withMetric(key, it)) }
-                )
-            }
-            if (filteredSensors.isEmpty()) Text("No readable temperature sensors match.", color = Muted, fontSize = 11.sp)
+            return
         }
+        for ((name, options) in grouped) {
+            val groupCard = card().apply { setPadding(dp(8), dp(4), dp(8), dp(4)) }
+            groupCard.addView(label(name, 12f, if (isGpu) Ui.BLUE else Ui.MINT, true).apply { setPadding(0, dp(5), 0, dp(2)) })
+            val sourceRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+            val ordered = options.sortedBy { if (it.variant == "usr") 0 else if (it.variant == "step") 1 else 2 }
+            ordered.forEach { option ->
+                val cell = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(2), dp(3), dp(2), dp(3)) }
+                val check = CheckBox(this).apply {
+                    text = if (option.variant.isBlank()) "sensor" else option.variant
+                    textSize = 11f
+                    setTextColor(Ui.WHITE)
+                    buttonTintList = ColorStateList.valueOf(if (isGpu) Ui.BLUE else Ui.MINT)
+                    isChecked = config.selectedThermalSensors.contains(option.reading.id)
+                    setOnCheckedChangeListener { _, enabled ->
+                        save(config.withMetric(HudConfig.SENSOR_PREFIX + option.reading.id, enabled))
+                    }
+                }
+                cell.addView(check, LinearLayout.LayoutParams(0, dp(40), 1f))
+                val value = label("N/A", 11f, Ui.MINT, true).apply { typeface = Typeface.MONOSPACE; gravity = Gravity.CENTER_VERTICAL or Gravity.END; minWidth = dp(62) }
+                valueViews[HudConfig.SENSOR_PREFIX + option.reading.id] = value
+                cell.addView(value, wrapWrap())
+                sourceRow.addView(cell, LinearLayout.LayoutParams(0, -2, 1f))
+            }
+            groupCard.addView(sourceRow, matchWrap())
+            parent.addView(groupCard, matchWrap(bottom = 5))
+        }
+    }
 
-        Divider(color = Edge, thickness = 0.7.dp)
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Text("Custom rows", color = MainText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-            Text("${config.customEntries.size}", color = Muted, fontSize = 11.sp)
-            TextButton(onClick = { showCustomEditor = !showCustomEditor }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)) {
-                Text(if (showCustomEditor) "Close" else "Add", color = Mint, fontSize = 11.sp)
-            }
+    private fun buildAllSensors(parent: LinearLayout) {
+        val search = EditText(this).apply {
+            hint = "Search sensor type"
+            setTextColor(Ui.WHITE); setHintTextColor(Ui.MUTED); textSize = 13f; setSingleLine(true)
+            setText(searchText); setPadding(dp(10), dp(3), dp(10), dp(3)); background = rounded(Ui.PANEL, Ui.EDGE, 10)
+            addTextChangedListener(SimpleTextWatcher { searchText = it })
         }
-        if (showCustomEditor) {
-            OutlinedTextField(
-                value = customLabel,
-                onValueChange = { customLabel = it.take(30) },
-                placeholder = { Text("Label, e.g. Hotspot", fontSize = 12.sp) },
-                singleLine = true,
-                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, color = MainText),
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(10.dp)
-            )
-            Box {
-                OutlinedButton(onClick = { sensorMenuOpen = true }, modifier = Modifier.fillMaxWidth()) {
-                    Text(selectedCustomSensor?.let { "${it.label} · ${it.id}" } ?: "Choose a sensor",
-                        color = MainText, fontSize = 11.sp, maxLines = 1)
-                }
-                DropdownMenu(
-                    expanded = sensorMenuOpen,
-                    onDismissRequest = { sensorMenuOpen = false },
-                    modifier = Modifier.heightIn(max = 340.dp).background(Panel)
-                ) {
-                    sortedSensors.forEach { sensor ->
-                        DropdownMenuItem(
-                            text = { Text("${sensor.label} · ${sensor.id}", fontSize = 11.sp, maxLines = 1) },
-                            onClick = {
-                                customSensorId = sensor.id
-                                sensorMenuOpen = false
-                            }
-                        )
-                    }
-                }
+        parent.addView(search, matchWrap(bottom = 6))
+        val readings = allSourceReadings().filter {
+            "${it.label} ${it.id} ${it.sourceName}".contains(searchText, ignoreCase = true)
+        }
+        readings.forEach { reading ->
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(6), dp(2), dp(6), dp(2)) }
+            row.addView(label("${SensorSourceLabels.overlayLabel(reading)} · ${reading.id}", 11f, Ui.WHITE, false),
+                LinearLayout.LayoutParams(0, -2, 1f))
+            row.addView(CheckBox(this).apply {
+                buttonTintList = ColorStateList.valueOf(Ui.MINT)
+                isChecked = config.selectedThermalSensors.contains(reading.id)
+                setOnCheckedChangeListener { _, enabled -> save(config.withMetric(HudConfig.SENSOR_PREFIX + reading.id, enabled)) }
+            })
+            parent.addView(row, matchWrap())
+            val value = label(temp(reading), 10f, Ui.MUTED, false)
+            valueViews[HudConfig.SENSOR_PREFIX + reading.id] = value
+            parent.addView(value, matchWrap(start = 7, bottom = 3))
+        }
+        if (readings.isEmpty()) parent.addView(button("Scan sensors", true).apply { setOnClickListener { scanCatalog() } }, matchWrap())
+    }
+
+    private fun buildCustomRows(parent: LinearLayout) {
+        val available = allSourceReadings()
+        if (available.isEmpty()) {
+            parent.addView(button("Scan all thermal sensors", true).apply { setOnClickListener { scanCatalog() } }, matchWrap())
+        } else {
+            val labelInput = EditText(this).apply {
+                hint = "Custom label, e.g. Hotspot"
+                setTextColor(Ui.WHITE); setHintTextColor(Ui.MUTED); textSize = 13f; setSingleLine(true)
+                background = rounded(Ui.PANEL, Ui.EDGE, 10); setPadding(dp(10), dp(8), dp(10), dp(8))
             }
-            Button(
-                onClick = {
-                    val chosen = sortedSensors.firstOrNull { it.id == (customSensorId.ifEmpty { selectedCustomSensor?.id ?: "" }) }
-                    val label = customLabel.trim()
-                    if (chosen != null && label.isNotEmpty()) {
-                        save(config.copy(customEntries = config.customEntries + CustomHudEntry(label = label, sensorId = chosen.id)))
-                        customLabel = ""
-                        customSensorId = chosen.id
-                        status = "Custom row added."
-                    }
-                },
-                enabled = customLabel.trim().isNotEmpty() && selectedCustomSensor != null,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg)
-            ) { Text("Add overlay row", fontWeight = FontWeight.SemiBold) }
+            parent.addView(labelInput, matchWrap(bottom = 5))
+            val spinner = Spinner(this).apply {
+                adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item,
+                    available.map { "${SensorSourceLabels.overlayLabel(it)} · ${it.id}" })
+            }
+            parent.addView(spinner, matchWrap(bottom = 5))
+            parent.addView(button("Add custom row", false).apply {
+                setOnClickListener {
+                    val label = labelInput.text.toString().trim()
+                    val index = spinner.selectedItemPosition
+                    if (label.isNotEmpty() && index in available.indices) {
+                        save(config.copy(customEntries = config.customEntries + CustomHudEntry(label = label, sensorId = available[index].id)))
+                        rebuildKeepingScroll()
+                    } else statusLine?.text = "Enter a label and choose a sensor."
+                }
+            }, matchWrap(bottom = 5))
         }
         config.customEntries.forEach { entry ->
-            val sensor = snapshot.allSensors.firstOrNull { it.id == entry.sensorId }
-                ?: sensorCatalogSnapshot.allSensors.firstOrNull { it.id == entry.sensorId }
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(entry.label, color = MainText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                    Text(sensor?.let { "${it.label} · ${it.id}" } ?: "Sensor unavailable",
-                        color = Muted, fontSize = 10.sp, maxLines = 1)
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+            row.addView(label(entry.label, 12f, Ui.WHITE, true), LinearLayout.LayoutParams(0, dp(42), 1f))
+            val value = label("N/A", 11f, Ui.MINT, true)
+            valueViews[HudConfig.SENSOR_PREFIX + entry.sensorId] = value
+            row.addView(value, wrapWrap(end = 4))
+            row.addView(button("Remove", true, Ui.RED).apply {
+                setOnClickListener {
+                    save(config.copy(customEntries = config.customEntries.filterNot { it.id == entry.id }))
+                    rebuildKeepingScroll()
                 }
-                Text(temp(sensor), color = sensor?.celsius?.let { Color(HudPalette.heatColor(it, config.textBrightness)) } ?: Muted, fontSize = 11.sp)
-                TextButton(
-                    onClick = { save(config.copy(customEntries = config.customEntries.filterNot { it.id == entry.id })) },
-                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
-                ) { Text("Remove", color = Color(0xFFFF8888), fontSize = 10.sp) }
-            }
+            }, wrapWrap())
+            parent.addView(row, matchWrap())
         }
-
-        Divider(color = Edge, thickness = 0.7.dp)
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Text("Refresh interval", color = MainText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-            Text(String.format(Locale.US, "%.2f s", config.refreshMs / 1000f), color = Mint, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
-        }
-        Slider(
-            value = config.refreshMs.toFloat(),
-            onValueChange = { save(config.copy(refreshMs = ((it / 50f).roundToInt() * 50).coerceIn(500, 5000))) },
-            valueRange = 500f..5000f,
-            steps = 89,
-            colors = SliderDefaults.colors(thumbColor = Mint, activeTrackColor = Mint, inactiveTrackColor = Edge)
-        )
-
-        TextButton(onClick = { showControls = !showControls }, contentPadding = PaddingValues(horizontal = 0.dp, vertical = 2.dp)) {
-            Text(if (showControls) "Hide display and position settings" else "Display and position settings",
-                color = Mint, fontSize = 12.sp)
-        }
-        if (showControls) {
-            SettingsSlider("HUD size", "${config.scalePercent}%", config.scalePercent.toFloat(), 70f..115f, 8,
-                "Small", "Large") { save(config.copy(scalePercent = it.toInt())) }
-            SettingsSlider("Text brightness", "${config.textBrightness}%", config.textBrightness.toFloat(), 35f..100f, 12,
-                "Dim", "Bright") { save(config.copy(textBrightness = it.toInt())) }
-            SettingsSlider("Background opacity", "${config.backgroundOpacity}%", config.backgroundOpacity.toFloat(), 0f..65f, 12,
-                "Text only", "More visible") { save(config.copy(backgroundOpacity = it.toInt())) }
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text("Lock position", color = MainText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                    Text(if (config.lockPosition) "Locked · all HUD touches pass through." else "Unlocked · drag anywhere on the rows.",
-                        color = Muted, fontSize = 10.sp)
-                }
-                Switch(checked = config.lockPosition, onCheckedChange = { save(config.copy(lockPosition = it)) })
-            }
-            SettingsSlider("Horizontal position", "${config.positionXDp} dp", config.positionXDp.toFloat(),
-                0f..screenMaxX.toFloat().coerceAtLeast(0f), 0, "Left", "Right") { save(config.copy(positionXDp = it.toInt())) }
-            SettingsSlider("Vertical position", "${config.positionYDp} dp", config.positionYDp.toFloat(),
-                screenMinY.toFloat()..screenMaxY.toFloat().coerceAtLeast(screenMinY.toFloat()), 0, "Below notch", "Bottom") {
-                save(config.copy(positionYDp = it.toInt()))
-            }
-        }
-
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
-            Button(
-                onClick = { startOverlay() }, modifier = Modifier.weight(1f).height(44.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Bg),
-                shape = RoundedCornerShape(10.dp)
-            ) { Text("Apply / start", fontWeight = FontWeight.Bold, fontSize = 12.sp) }
-            OutlinedButton(
-                onClick = { stopOverlay() }, modifier = Modifier.weight(1f).height(44.dp),
-                shape = RoundedCornerShape(10.dp)
-            ) { Text("Stop", color = MainText, fontSize = 12.sp) }
-        }
-        if (status.isNotBlank()) Text(status, color = Mint, fontSize = 11.sp)
-        Spacer(Modifier.height(8.dp))
     }
+
+    private fun buildDisplaySettings(parent: LinearLayout) {
+        val settings = card()
+        addSlider(settings, "Text brightness", config.textBrightness, 35, 100, 1, "35%", "100%", { "${it}%" }) {
+            save(config.copy(textBrightness = it))
+        }
+        addSlider(settings, "Background opacity", config.backgroundOpacity, 0, 65, 1, "Text only", "More solid", { "${it}%" }) {
+            save(config.copy(backgroundOpacity = it))
+        }
+        addSlider(settings, "HUD size", config.scalePercent, 70, 115, 1, "70%", "115%", { "${it}%" }) {
+            save(config.copy(scalePercent = it))
+        }
+        addSlider(settings, "Horizontal position", config.positionXDp, 0, (resources.displayMetrics.widthPixels / resources.displayMetrics.density).toInt().coerceAtLeast(0),
+            1, "Left", "Right", { "${it} dp" }) { save(config.copy(positionXDp = it)) }
+        addSlider(settings, "Vertical position", config.positionYDp, 24, (resources.displayMetrics.heightPixels / resources.displayMetrics.density).toInt().coerceAtLeast(24),
+            1, "Top", "Bottom", { "${it} dp" }) { save(config.copy(positionYDp = it)) }
+        val lockRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(5), dp(4), dp(5), dp(4)) }
+        lockRow.addView(label("Lock position · touch-through", 12f, Ui.WHITE, true), LinearLayout.LayoutParams(0, -2, 1f))
+        lockRow.addView(Switch(this).apply {
+            isChecked = config.lockPosition
+            setOnCheckedChangeListener { _, enabled -> save(config.copy(lockPosition = enabled)) }
+        })
+        settings.addView(lockRow, matchWrap())
+        parent.addView(settings, matchWrap())
+    }
+
+    private fun addSlider(
+        parent: LinearLayout, title: String, current: Int, min: Int, max: Int, step: Int,
+        left: String, right: String, display: (Int) -> String, onDone: (Int) -> Unit
+    ) {
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(9), dp(5), dp(9), dp(5)) }
+        val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        header.addView(label(title, 12f, Ui.WHITE, true), LinearLayout.LayoutParams(0, -2, 1f))
+        val valueLabel = label(display(current), 11f, Ui.MINT, true).apply { typeface = Typeface.MONOSPACE }
+        header.addView(valueLabel)
+        col.addView(header, matchWrap())
+        val stride = step.coerceAtLeast(1)
+        val count = ((max - min) / stride).coerceAtLeast(1)
+        val seek = SeekBar(this).apply {
+            this.max = count
+            progress = ((current.coerceIn(min, max) - min) / stride).coerceIn(0, count)
+            progressTintList = ColorStateList.valueOf(Ui.MINT)
+            thumbTintList = ColorStateList.valueOf(Ui.MINT)
+            progressBackgroundTintList = ColorStateList.valueOf(Ui.EDGE)
+        }
+        var pending = current
+        seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(bar: SeekBar?, progress: Int, fromUser: Boolean) {
+                pending = (min + progress * stride).coerceAtMost(max)
+                valueLabel.text = display(pending)
+            }
+            override fun onStartTrackingTouch(bar: SeekBar?) {}
+            override fun onStopTrackingTouch(bar: SeekBar?) { if (pending != current) onDone(pending) }
+        })
+        col.addView(seek, matchWrap())
+        val limits = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        limits.addView(label(left, 9f, Ui.MUTED, false), LinearLayout.LayoutParams(0, -2, 1f))
+        limits.addView(label(right, 9f, Ui.MUTED, false).apply { gravity = Gravity.END })
+        col.addView(limits, matchWrap())
+        parent.addView(col, matchWrap())
+    }
+
+    private fun allSourceReadings(): List<ThermalReading> {
+        val map = linkedMapOf<String, ThermalReading>()
+        catalogSnapshot.allSensors.forEach { map[it.id] = it }
+        snapshot.allSensors.forEach { map[it.id] = it }
+        return map.values.sortedBy { it.id.removePrefix("thermal_zone").toIntOrNull() ?: Int.MAX_VALUE }
+    }
+
+    private fun coreCountLabel(): String {
+        val count = allSourceReadings().mapNotNull { SensorSourceLabels.cpuCoreOption(it)?.substringBefore(" · ") }.distinct().size
+        return if (count == 0) "Core sensors" else "${count} cores"
+    }
+
+    private fun gpuCountLabel(): String {
+        val count = allSourceReadings().mapNotNull { SensorSourceLabels.gpuSourceOption(it)?.substringBefore(" · ") }.distinct().size
+        return if (count == 0) "GPU sensors" else "${count} sources"
+    }
+
+    private fun compareBySourceName(): Comparator<String> = Comparator { a, b ->
+        fun number(value: String): Int = Regex("(?:CPU|GPU) (\\d+)").find(value)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 999
+        val diff = number(a).compareTo(number(b))
+        if (diff != 0) diff else a.compareTo(b)
+    }
+
+    private fun updateValues() {
+        val sources = allSourceReadings()
+        valueViews.forEach { (key, view) ->
+            val reading = when (key) {
+                "cpuTemp" -> snapshot.cpuOverall
+                "gpuTemp" -> snapshot.gpuOverall
+                else -> when {
+                    key.startsWith(HudConfig.SENSOR_PREFIX) ->
+                        sources.firstOrNull { it.id == key.removePrefix(HudConfig.SENSOR_PREFIX) }
+                    key.startsWith("core") && key.endsWith("Temp") ->
+                        key.removePrefix("core").removeSuffix("Temp").toIntOrNull()?.let { snapshot.cpuCores.getOrNull(it) }
+                    else -> null
+                }
+            }
+            view.text = temp(reading)
+            view.setTextColor(reading?.celsius?.let { HudPalette.heatColor(it, config.textBrightness) } ?: Ui.MUTED)
+        }
+    }
+
+    private fun temp(reading: ThermalReading?): String =
+        reading?.celsius?.let { String.format(Locale.US, "%.1f°C", it) } ?: "N/A"
+
+    private fun label(text: String, size: Float, color: Int, bold: Boolean): TextView =
+        TextView(this).apply {
+            this.text = text
+            textSize = size
+            setTextColor(color)
+            typeface = if (bold) Typeface.create("sans-serif", Typeface.BOLD) else Typeface.create("sans-serif", Typeface.NORMAL)
+            gravity = Gravity.CENTER_VERTICAL
+            includeFontPadding = false
+        }
+
+    private fun button(text: String, outline: Boolean, accent: Int = Ui.MINT): Button =
+        Button(this).apply {
+            this.text = text
+            textSize = 11f
+            isAllCaps = false
+            setTextColor(if (outline) accent else Ui.BG)
+            background = rounded(if (outline) Ui.PANEL else accent, if (outline) Ui.EDGE else accent, 10)
+            stateListAnimator = null
+            minHeight = dp(42)
+            minimumHeight = dp(42)
+        }
+
+    private fun card(): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(5), dp(4), dp(5), dp(4))
+        background = rounded(Ui.PANEL, Ui.EDGE, 14)
+    }
+
+    private fun divider(): View = View(this).apply { setBackgroundColor(Ui.EDGE) }
+
+    private fun rounded(fill: Int, stroke: Int, radiusDp: Int): GradientDrawable =
+        GradientDrawable().apply { setColor(fill); cornerRadius = dp(radiusDp).toFloat(); setStroke(dp(1), stroke) }
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
+
+    private fun matchWrap(top: Int = 0, bottom: Int = 0, start: Int = 0, end: Int = 0): LinearLayout.LayoutParams =
+        LinearLayout.LayoutParams(-1, -2).apply {
+            topMargin = dp(top); bottomMargin = dp(bottom); marginStart = dp(start); marginEnd = dp(end)
+        }
+
+    private fun wrapWrap(top: Int = 0, bottom: Int = 0, start: Int = 0, end: Int = 0): LinearLayout.LayoutParams =
+        LinearLayout.LayoutParams(-2, -2).apply {
+            topMargin = dp(top); bottomMargin = dp(bottom); marginStart = dp(start); marginEnd = dp(end)
+        }
 }
 
-@Composable
-private fun CompactSensorRow(
-    label: String,
-    value: String,
-    detail: String?,
-    checked: Boolean,
-    valueColor: Color,
-    onChecked: (Boolean) -> Unit
-) {
-    Column(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Text(label, color = MainText, fontSize = 13.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-            Text(value, color = valueColor, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.width(5.dp))
-            Checkbox(
-                checked = checked,
-                onCheckedChange = onChecked,
-                modifier = Modifier.size(30.dp),
-                colors = CheckboxDefaults.colors(checkedColor = Mint, uncheckedColor = Muted, checkmarkColor = Bg)
-            )
-        }
-        if (!detail.isNullOrBlank()) Text(detail, color = Muted, fontSize = 9.sp, maxLines = 1)
-    }
-}
-
-@Composable
-private fun SettingsSlider(
-    title: String, valueText: String, value: Float, range: ClosedFloatingPointRange<Float>,
-    steps: Int, low: String, high: String, onChange: (Float) -> Unit
-) {
-    Column(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalArrangement = Arrangement.spacedBy(0.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Text(title, color = MainText, fontSize = 12.sp, modifier = Modifier.weight(1f))
-            Text(valueText, color = Mint, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
-        }
-        Slider(
-            value = value.coerceIn(range.start, range.endInclusive),
-            onValueChange = onChange,
-            valueRange = range,
-            steps = steps,
-            colors = SliderDefaults.colors(thumbColor = Mint, activeTrackColor = Mint, inactiveTrackColor = Edge)
-        )
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(low, color = Muted, fontSize = 9.sp)
-            Text(high, color = Muted, fontSize = 9.sp)
-        }
-    }
+private class SimpleTextWatcher(private val changed: (String) -> Unit) : android.text.TextWatcher {
+    override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+    override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { changed(s?.toString().orEmpty()) }
+    override fun afterTextChanged(s: android.text.Editable?) {}
 }

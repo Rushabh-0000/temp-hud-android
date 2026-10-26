@@ -122,16 +122,18 @@ class SensorReader {
         val values = toRead.mapNotNull(::readTemperature)
         val cpuValues = values.filter { isCpuZone(it.zone.type) }
         val gpuValues = values.filter { isGpuZone(it.zone.type) }
+        val selectedCpuValues = selectVariant(cpuValues, config.cpuAverageVariant)
+        val selectedGpuValues = selectVariant(gpuValues, config.gpuAverageVariant)
 
-        val cores = coreReadings(cpuValues)
+        val cores = coreReadings(selectedCpuValues)
         val mappedCoreSources = cores.mapNotNull { it?.sourceName }.toSet()
         val overallCpuSources = if (mappedCoreSources.isNotEmpty()) {
-            cpuValues.filter { it.sourceName in mappedCoreSources }
+            selectedCpuValues.filter { it.sourceName in mappedCoreSources }
         } else {
-            deduplicatePairs(cpuValues)
+            deduplicatePairs(selectedCpuValues)
         }
         val cpuAverage = average(overallCpuSources)
-        val uniqueGpu = deduplicatePairs(gpuValues)
+        val uniqueGpu = deduplicatePairs(selectedGpuValues)
         val gpuAverage = average(uniqueGpu)
 
         return TemperatureSnapshot(
@@ -149,6 +151,16 @@ class SensorReader {
             allSensors = values.map { it.asReading() }
         )
     }
+
+    private fun selectVariant(values: List<ZoneValue>, variant: String): List<ZoneValue> =
+        values.filter { value ->
+            val type = value.zone.type
+            when {
+                type.endsWith("-usr") -> variant != "step"
+                type.endsWith("-step") -> variant == "step"
+                else -> true
+            }
+        }
 
     private fun average(values: List<ZoneValue>): Float? {
         if (values.isEmpty()) return null
@@ -251,6 +263,6 @@ object SensorSourceLabels {
     }
 
     fun overlayLabel(reading: ThermalReading): String =
-        cpuCoreOption(reading) ?: gpuSourceOption(reading)
-        ?: reading.label.uppercase(Locale.US)
+        (cpuCoreOption(reading) ?: gpuSourceOption(reading)
+            ?: reading.label.uppercase(Locale.US)).substringBefore(" · ")
 }

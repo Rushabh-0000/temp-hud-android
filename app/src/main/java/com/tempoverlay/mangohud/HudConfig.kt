@@ -32,6 +32,8 @@ data class HudConfig(
     val backgroundOpacity: Int = 0,
     val scalePercent: Int = 100,
     val textBrightness: Int = 100,
+    val cpuAverageVariant: String = "usr",
+    val gpuAverageVariant: String = "usr",
     val lockPosition: Boolean = false,
     val positionXDp: Int = 8,
     val positionYDp: Int = 100
@@ -61,6 +63,8 @@ data class HudConfig(
             .putInt("transparency", backgroundOpacity.coerceIn(0, 65))
             .putInt("scale_percent", scalePercent.coerceIn(70, 115))
             .putInt("text_brightness", textBrightness.coerceIn(35, 100))
+            .putString("cpu_average_variant", cpuAverageVariant.normalizedVariant())
+            .putString("gpu_average_variant", gpuAverageVariant.normalizedVariant())
             .putBoolean("lock_position", lockPosition)
             .putInt("position_x_dp", positionXDp.coerceAtLeast(0))
             .putInt("position_y_dp", positionYDp.coerceAtLeast(0))
@@ -146,6 +150,8 @@ data class HudConfig(
                 backgroundOpacity = p.getInt("transparency", 0).coerceIn(0, 65),
                 scalePercent = p.getInt("scale_percent", 100).coerceIn(70, 115),
                 textBrightness = p.getInt("text_brightness", 100).coerceIn(35, 100),
+                cpuAverageVariant = (p.getString("cpu_average_variant", "usr") ?: "usr").normalizedVariant(),
+                gpuAverageVariant = (p.getString("gpu_average_variant", "usr") ?: "usr").normalizedVariant(),
                 lockPosition = p.getBoolean("lock_position", false),
                 positionXDp = p.getInt("position_x_dp", 8).coerceAtLeast(0),
                 positionYDp = p.getInt("position_y_dp", 100).coerceAtLeast(0)
@@ -241,6 +247,8 @@ data class HudConfig(
                             backgroundOpacity = json.optInt("backgroundOpacity", 0).coerceIn(0, 65),
                             scalePercent = json.optInt("scalePercent", 100).coerceIn(70, 115),
                             textBrightness = json.optInt("textBrightness", 100).coerceIn(35, 100),
+                            cpuAverageVariant = json.optString("cpuAverageVariant", "usr").normalizedVariant(),
+                            gpuAverageVariant = json.optString("gpuAverageVariant", "usr").normalizedVariant(),
                             lockPosition = json.optBoolean("lockPosition", false),
                             positionXDp = json.optInt("positionXDp", 8).coerceAtLeast(0),
                             positionYDp = json.optInt("positionYDp", 100).coerceAtLeast(0)
@@ -321,3 +329,7 @@ object HudPalette {
         )
     }
 }
+
+
+private fun String.normalizedVariant(): String =
+    if (equals("step", ignoreCase = true)) "step" else "usr"
