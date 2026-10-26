@@ -91,7 +91,11 @@ jobs:
           if [[ "$PUBLISH_RELEASE" == "true" ]]; then
             latest="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1 --json tagName --jq '.[0].tagName // empty' || true)"
             if [[ -z "$latest" ]]; then
-              version="0.7.7"
+              case "$RELEASE_BUMP" in
+                major) version="1.0.0" ;;
+                minor) version="0.8.0" ;;
+                *) version="0.7.7" ;;
+              esac
             else
               base="${latest#v}"
               if [[ ! "$base" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]; then base="0.7.7"; fi

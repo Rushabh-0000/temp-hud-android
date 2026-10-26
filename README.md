@@ -1,5 +1,7 @@
 # Temp HUD — Version 2
 
+**V2 release baseline:** 1.0.0.
+
 The root app is a clean rebuild. Original Version 1 source and project files remain archived in [version-1/](version-1/). V2 reuses the thermal reader, overlay renderer, and overlay settings concepts only.
 
 - Minimal full-screen UI: no in-app header, app logo, dashboard copy, or Start/Stop buttons.
