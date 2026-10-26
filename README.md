@@ -1,6 +1,6 @@
 # Temp HUD
 
-Current development version: **0.7.6**.
+Current development version: **0.7.7**.
 
 Compact MangoHud-inspired Android temperature overlay for Android 11+, written in Kotlin using Android's built-in Material-themed Views to keep the APK lean.
 
@@ -15,6 +15,10 @@ Compact MangoHud-inspired Android temperature overlay for Android 11+, written i
 - CPU cores and GPU sources show Use and Step checkboxes side by side for each readable paired zone. Overlay labels remain clean (`CPU 0`, `GPU 0`) without usr/step. CPU and GPU overall averages each have a mutually exclusive Use/Step selector; Use is the default.
 - These are thermal-zone readings exposed by the phone firmware, not guaranteed physical GPU-core sensors. If firmware exposes no suitable sensor, the app shows N/A.
 - Any readable thermal-zone sensor can be selected from Browse, and custom rows can pair a custom label with any selected temperature sensor.
+
+## UI and floating-window fixes in 0.7.7
+- Replaced the custom-measured divider with a normal one-pixel Android View. The previous divider matched the separator colour but could expand into a large blank block in floating-window mode. The ScrollView child now uses explicit ScrollView.LayoutParams with WRAP_CONTENT and reasserts natural content measurement after multi-window/configuration changes.
+- The settings header uses the app launcher icon; live readings and CPU/GPU average-source selection are grouped into distinct compact cards. Buttons provide touch ripple feedback. The interface remains built with native Android Views to avoid adding Compose runtime size.
 
 ## Layout, sensor and low-allocation fixes in 0.7.5
 - The ScrollView uses a wrap-content child without viewport stretching, including in Android floating-window mode, to avoid blank fill areas. Snapshot broadcasts are ignored while the Activity is paused. Thermal-zone IDs stay in the catalog even when a particular poll temporarily returns N/A, so the entire screen is not rebuilt repeatedly.

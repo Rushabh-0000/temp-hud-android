@@ -6,9 +6,11 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.res.ColorStateList
+import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.RippleDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -20,11 +22,13 @@ import android.os.SystemClock
 import android.provider.Settings
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.RadioButton
 import android.widget.RadioGroup
@@ -187,6 +191,32 @@ class MainActivity : Activity() {
         if (HudConfig.isRunning() && !isChangingConfigurations) finishAndRemoveTask()
     }
 
+    override fun onMultiWindowModeChanged(isInMultiWindowMode: Boolean, newConfig: Configuration) {
+        super.onMultiWindowModeChanged(isInMultiWindowMode, newConfig)
+        repairScrollContentMeasurement()
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        repairScrollContentMeasurement()
+    }
+
+    private fun repairScrollContentMeasurement() {
+        val scroll = scrollView ?: return
+        scroll.post {
+            scroll.isFillViewport = false
+            val child = scroll.getChildAt(0) ?: return@post
+            val params = child.layoutParams as? ScrollView.LayoutParams ?: return@post
+            if (params.height != ViewGroup.LayoutParams.WRAP_CONTENT) {
+                params.height = ViewGroup.LayoutParams.WRAP_CONTENT
+                child.layoutParams = params
+            }
+            child.requestLayout()
+            scroll.requestLayout()
+            scroll.invalidate()
+        }
+    }
+
     override fun onDestroy() {
         stopSampler()
         super.onDestroy()
@@ -315,29 +345,35 @@ class MainActivity : Activity() {
         sensorSearchRows.clear()
         val scroll = ScrollView(this).apply {
             setBackgroundColor(Ui.BG)
-            clipToPadding = false
-            clipChildren = false
+            // Keep the scroll child at natural content height. This is important in
+            // Android floating-window mode, where the viewport may be much shorter.
+            clipToPadding = true
+            clipChildren = true
             isFillViewport = false
             isVerticalScrollBarEnabled = true
+            overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
         }
         val column = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14), dp(10), dp(14), dp(18))
             setBackgroundColor(Ui.BG)
+            clipChildren = true
+            clipToPadding = true
         }
-        column.minimumHeight = 0
-        column.clipChildren = false
-        scroll.addView(column, android.widget.FrameLayout.LayoutParams(
-            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-            android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+        scroll.addView(column, ScrollView.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
         ))
         scrollView = scroll
         setContentView(scroll)
 
         val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        val logo = TextView(this).apply {
-            text = "TH"; textSize = 15f; typeface = Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER
-            setTextColor(Ui.MINT); background = rounded(Ui.PANEL_ALT, Ui.EDGE, 12)
+        val logo = ImageView(this).apply {
+            setImageResource(R.mipmap.ic_launcher)
+            contentDescription = "Temp HUD app icon"
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            background = rounded(Ui.PANEL_ALT, Ui.EDGE, 12)
+            setPadding(dp(3), dp(3), dp(3), dp(3))
         }
         header.addView(logo, LinearLayout.LayoutParams(dp(42), dp(42)))
         val titleCol = LinearLayout(this).apply {
@@ -355,12 +391,27 @@ class MainActivity : Activity() {
         header.addView(statusView)
         column.addView(header)
 
-        val overall = card()
+        column.addView(label("LIVE READINGS", 9f, Ui.MUTED, true).apply {
+            letterSpacing = 1.0f
+            setPadding(dp(3), dp(3), 0, dp(5))
+        }, matchWrap(top = 4))
+        val overall = card().apply {
+            setPadding(dp(8), dp(6), dp(8), dp(6))
+        }
         addOverallRow(overall, "CPU", "cpuTemp", config.showCpuTemp)
         addOverallRow(overall, "GPU", "gpuTemp", config.showGpuTemp)
         column.addView(overall, matchWrap())
-        addAverageSelector(column, "CPU average source", config.cpuAverageVariant, true)
-        addAverageSelector(column, "GPU average source", config.gpuAverageVariant, false)
+
+        val averageSources = card().apply {
+            setPadding(dp(8), dp(5), dp(8), dp(5))
+        }
+        averageSources.addView(label("AVERAGE SOURCE", 9f, Ui.MUTED, true).apply {
+            letterSpacing = 0.8f
+            setPadding(dp(4), dp(1), 0, dp(2))
+        }, matchWrap())
+        addAverageSelector(averageSources, "CPU", config.cpuAverageVariant, true)
+        addAverageSelector(averageSources, "GPU", config.gpuAverageVariant, false)
+        column.addView(averageSources, matchWrap(top = 6))
 
         column.addView(divider(), dividerParams(top = 7, bottom = 7))
         addExpandableHeader(column, "CPU cores", coreCountLabel(), showCores, Ui.MINT) {
@@ -454,8 +505,8 @@ class MainActivity : Activity() {
     }
 
     private fun addAverageSelector(parent: LinearLayout, title: String, current: String, cpu: Boolean) {
-        val box = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(9), dp(2), dp(9), dp(2)) }
-        box.addView(label(title, 11f, Ui.MUTED, false), LinearLayout.LayoutParams(0, -2, 1f))
+        val box = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(5), dp(2), dp(5), dp(2)) }
+        box.addView(label(title, 11f, Ui.WHITE, true), LinearLayout.LayoutParams(0, -2, 1f))
         val group = RadioGroup(this).apply { orientation = RadioGroup.HORIZONTAL }
         val usr = RadioButton(this).apply {
             text = "Use"; textSize = 11f; setTextColor(Ui.WHITE)
@@ -836,7 +887,12 @@ class MainActivity : Activity() {
             textSize = 11f
             isAllCaps = false
             setTextColor(if (outline) accent else Ui.BG)
-            background = rounded(if (outline) Ui.PANEL else accent, if (outline) Ui.EDGE else accent, 10)
+            val fill = rounded(if (outline) Ui.PANEL else accent, if (outline) Ui.EDGE else accent, 10)
+            background = RippleDrawable(
+                ColorStateList.valueOf(if (outline) 0x338CFFD0 else 0x44FFFFFF),
+                fill,
+                null
+            )
             stateListAnimator = null
             minHeight = dp(42)
             minimumHeight = dp(42)
@@ -848,13 +904,9 @@ class MainActivity : Activity() {
         background = rounded(Ui.PANEL, Ui.EDGE, 14)
     }
 
-    private fun divider(): View = object : View(this) {
-        override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-            setMeasuredDimension(View.MeasureSpec.getSize(widthMeasureSpec), dp(1))
-        }
-    }.apply {
+    private fun divider(): View = View(this).apply {
         setBackgroundColor(Ui.EDGE)
-        minimumHeight = dp(1)
+        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
     }
 
     private fun dividerParams(top: Int = 0, bottom: Int = 0): LinearLayout.LayoutParams =
