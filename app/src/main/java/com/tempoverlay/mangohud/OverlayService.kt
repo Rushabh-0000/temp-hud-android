@@ -79,7 +79,7 @@ class OverlayService : Service() {
             val elapsedMs = SystemClock.uptimeMillis() - startedAt
             // Start-to-start timing avoids adding read duration to the selected interval.
             // Keep a small floor if thermal reads overrun, preventing a busy loop.
-            handler.postDelayed(this, (config.refreshMs.toLong() - elapsedMs).coerceAtLeast(100L))
+            handler.postDelayed(this, (sampleConfig.refreshMs.toLong() - elapsedMs).coerceAtLeast(100L))
         }
     }
 
