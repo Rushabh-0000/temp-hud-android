@@ -28,7 +28,7 @@ data class HudConfig(
             refreshMs = refreshMs.coerceIn(500, 3000),
             backgroundOpacity = backgroundOpacity.coerceIn(0, 65),
             scalePercent = scalePercent.coerceIn(70, 115),
-            textBrightness = textBrightness.coerceIn(35, 150),
+            textBrightness = textBrightness.coerceIn(35, 100),
             cpuAverageVariant = cpuAverageVariant.normalizedVariant(),
             gpuAverageVariant = gpuAverageVariant.normalizedVariant(),
             positionXDp = positionXDp.coerceAtLeast(0),
@@ -102,7 +102,7 @@ data class HudConfig(
                         refreshMs = p.getInt("refresh_ms", 1500).coerceIn(500, 3000),
                         backgroundOpacity = p.getInt("transparency", 0).coerceIn(0, 65),
                         scalePercent = p.getInt("scale_percent", 100).coerceIn(70, 115),
-                        textBrightness = p.getInt("text_brightness", 100).coerceIn(35, 150),
+                        textBrightness = p.getInt("text_brightness", 100).coerceIn(35, 100),
                         cpuAverageVariant = (p.getString("cpu_average_variant", "usr") ?: "usr").normalizedVariant(),
                         gpuAverageVariant = (p.getString("gpu_average_variant", "usr") ?: "usr").normalizedVariant(),
                         lockPosition = p.getBoolean("lock_position", false),
@@ -176,19 +176,13 @@ object HudPalette {
     }
 
     private fun applyBrightness(color: Int, brightness: Int): Int {
-        val percent = brightness.coerceIn(35, 150) / 100f
-        // Boost intensity while scaling all channels equally to preserve the heat-map hue.
-        val requestedGain = 0.5f + percent
-        val red = android.graphics.Color.red(color)
-        val green = android.graphics.Color.green(color)
-        val blue = android.graphics.Color.blue(color)
-        val largest = maxOf(red, green, blue, 1)
-        val gain = minOf(requestedGain, 255f / largest)
+        val percent = brightness.coerceIn(35, 100) / 100f
+        val gain = percent * (1.0f + 0.22f * percent)
         return android.graphics.Color.argb(
             android.graphics.Color.alpha(color),
-            (red * gain).toInt().coerceIn(0, 255),
-            (green * gain).toInt().coerceIn(0, 255),
-            (blue * gain).toInt().coerceIn(0, 255)
+            (android.graphics.Color.red(color) * gain).toInt().coerceIn(0, 255),
+            (android.graphics.Color.green(color) * gain).toInt().coerceIn(0, 255),
+            (android.graphics.Color.blue(color) * gain).toInt().coerceIn(0, 255)
         )
     }
 }
