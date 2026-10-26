@@ -425,9 +425,10 @@ class MainActivity : Activity() {
         }.groupBy { it.name }.toSortedMap(compareBySourceName())
 
         if (grouped.isEmpty()) {
-            parent.addView(label(if (isGpu) "No GPU-labelled thermal sources are exposed." else "No per-core CPU sources are exposed.",
-                11f, Ui.MUTED, false).apply { setPadding(dp(8), dp(6), dp(8), dp(10)) })
-            )
+            val message = if (isGpu) "No GPU-labelled thermal sources are exposed." else "No per-core CPU sources are exposed."
+            parent.addView(label(message, 11f, Ui.MUTED, false).apply {
+                setPadding(dp(8), dp(6), dp(8), dp(10))
+            })
             return
         }
         for ((name, options) in grouped) {
