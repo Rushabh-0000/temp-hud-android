@@ -236,7 +236,7 @@ class OverlayService : Service() {
         add(OverlayRow("CPU Eco Cluster", snapshot.cpuEcoCluster))
         add(OverlayRow("CPU Perf Cluster", snapshot.cpuPerfCluster))
         snapshot.cpuCores.forEachIndexed { index, reading ->
-            add(OverlayRow("CPU-$index", reading))
+            add(OverlayRow(reading?.label ?: "CPU-$index", reading))
         }
         add(OverlayRow("GPU Sensor 1", snapshot.gpuSensor1))
         add(OverlayRow("GPU Sensor 2", snapshot.gpuSensor2))

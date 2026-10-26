@@ -301,12 +301,39 @@ class SensorReader {
     private fun coreReadings(values: List<ZoneValue>): List<ThermalReading?> {
         val grouped = values.mapNotNull { value -> coreIndex(value.zone.type)?.let { it to value } }
             .groupBy({ it.first }, { it.second })
+        val indexedCoreSources = grouped.flatMap { (index, group) -> group.map { index to it } }
+
         return (0..7).map { core ->
-            val picked = grouped[core].orEmpty().maxWithOrNull(
+            val direct = grouped[core].orEmpty().maxWithOrNull(
                 compareBy<ZoneValue> { if (EXACT_CORE_PATTERN.matches(it.zone.type)) 2 else 1 }
                     .thenBy { it.zone.id }
-            ) ?: return@map null
-            ThermalReading("core${core}Temp", "CPU $core", picked.celsius, picked.sourceName)
+            )
+            if (direct != null) {
+                ThermalReading("core${core}Temp", "CPU $core", direct.celsius, direct.sourceName)
+            } else {
+                // On devices that omit a specific per-core zone, use the closest readable
+                // core; if none exist, fall back to the closest active CPU -usr source.
+                // The asterisk on the label makes a substitute reading visible to the user.
+                val nearestCore = indexedCoreSources.minWithOrNull(
+                    compareBy<Pair<Int, ZoneValue>> { kotlin.math.abs(it.first - core) }
+                        .thenBy { it.second.zone.id }
+                )?.second
+                val targetCluster = if (core <= 3) 0 else 1
+                val fallback = nearestCore ?: values.minWithOrNull(
+                    compareBy<ZoneValue> {
+                        val index = clusterIndex(it.zone.type)
+                        if (index == null) 10 else kotlin.math.abs(index - targetCluster)
+                    }.thenBy { it.zone.id.removePrefix("thermal_zone").toIntOrNull() ?: Int.MAX_VALUE }
+                )
+                fallback?.let {
+                    ThermalReading(
+                        "core${core}Temp",
+                        "CPU $core*",
+                        it.celsius,
+                        "Fallback for CPU $core: ${it.sourceName}"
+                    )
+                }
+            }
         }
     }
 

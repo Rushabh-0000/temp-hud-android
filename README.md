@@ -27,7 +27,7 @@ Compact MangoHud-inspired Android temperature overlay for Android 11+, written i
 ## Thermal source routing (0.7.15)
 - Reads zone source names from /sys/class/thermal/thermal_zone*/type and samples only names ending in -usr; -step and other variants are excluded.
 - Converts raw millidegree values to Celsius using raw / 1000.0.
-- CPU summary averages cpuss-0-usr and cpuss-1-usr. GPU summary averages gpuss-0-usr and gpuss-1-usr. Missing exact zones fall back to the closest readable CPU/GPU -usr values.
+- CPU summary averages cpuss-0-usr and cpuss-1-usr. GPU summary averages gpuss-0-usr and gpuss-1-usr. Missing exact zones fall back to the closest readable CPU/GPU -usr values; substitute per-core values are marked with an asterisk.
 - Sampling runs on a low-priority HandlerThread with a bounded interval. Service teardown clears queued callbacks and quits the worker. Polling uses some power while active; zero battery drain is not possible for a live monitor.
 
 ## Low-memory background mode
