@@ -49,39 +49,42 @@ data class TemperatureSnapshot(
     }
 
     companion object {
-        fun fromJson(raw: String): TemperatureSnapshot? = try {
-            val json = JSONObject(raw)
-            if (json.optInt("format", 0) != 1) return null
+        fun fromJson(raw: String): TemperatureSnapshot? {
+            return try {
+                val json = JSONObject(raw)
+                if (json.optInt("format", 0) != 1) {
+                    null
+                } else {
+                    fun decode(value: Any?): ThermalReading? {
+                        if (value == null || value === JSONObject.NULL || value !is JSONObject) return null
+                        val temp = if (value.isNull("celsius")) null else value.optDouble("celsius").toFloat()
+                        return ThermalReading(
+                            id = value.optString("id", ""),
+                            label = value.optString("label", ""),
+                            celsius = temp,
+                            sourceName = value.optString("sourceName", "")
+                        )
+                    }
 
-            fun decode(value: Any?): ThermalReading? {
-                if (value == null || value === JSONObject.NULL || value !is JSONObject) return null
-                val temp = if (value.isNull("celsius")) null else value.optDouble("celsius").toFloat()
-                return ThermalReading(
-                    id = value.optString("id", ""),
-                    label = value.optString("label", ""),
-                    celsius = temp,
-                    sourceName = value.optString("sourceName", "")
-                )
-            }
-
-            val coreJson = json.optJSONArray("cpuCores") ?: JSONArray()
-            val cores = (0..7).map { index -> decode(coreJson.opt(index)) }
-            val sensorJson = json.optJSONArray("allSensors") ?: JSONArray()
-            val sensors = buildList {
-                for (index in 0 until sensorJson.length()) {
-                    decode(sensorJson.opt(index))?.let { add(it) }
+                    val coreJson = json.optJSONArray("cpuCores") ?: JSONArray()
+                    val cores = (0..7).map { index -> decode(coreJson.opt(index)) }
+                    val sensorJson = json.optJSONArray("allSensors") ?: JSONArray()
+                    val sensors = buildList {
+                        for (index in 0 until sensorJson.length()) {
+                            decode(sensorJson.opt(index))?.let { add(it) }
+                        }
+                    }
+                    TemperatureSnapshot(
+                        cpuOverall = decode(json.opt("cpuOverall")),
+                        cpuCores = cores,
+                        gpuOverall = decode(json.opt("gpuOverall")),
+                        allSensors = sensors
+                    )
                 }
+            } catch (_: Exception) {
+                null
             }
-            TemperatureSnapshot(
-                cpuOverall = decode(json.opt("cpuOverall")),
-                cpuCores = cores,
-                gpuOverall = decode(json.opt("gpuOverall")),
-                allSensors = sensors
-            )
-        } catch (_: Exception) {
-            null
         }
-    }
 }
 
 class SensorReader {
