@@ -40,15 +40,15 @@ import android.widget.TextView
 import java.util.Locale
 
 private object Ui {
-    const val BG = 0xFF070D10.toInt()
-    const val PANEL = 0xFF101A1E.toInt()
-    const val PANEL_ALT = 0xFF17262A.toInt()
-    const val MINT = 0xFF50F58A.toInt()
-    const val BLUE = 0xFF62D7FF.toInt()
-    const val WHITE = 0xFFF2F7F6.toInt()
-    const val MUTED = 0xFF96AAAC.toInt()
-    const val EDGE = 0xFF26373B.toInt()
-    const val RED = 0xFFFF777F.toInt()
+    const val BG = 0xFF070A11.toInt()
+    const val PANEL = 0xFF111927.toInt()
+    const val PANEL_ALT = 0xFF1A2840.toInt()
+    const val MINT = 0xFFC7FF61.toInt()
+    const val BLUE = 0xFF6BDEFF.toInt()
+    const val WHITE = 0xFFF5F7FC.toInt()
+    const val MUTED = 0xFFA1ACC0.toInt()
+    const val EDGE = 0xFF2C3A50.toInt()
+    const val RED = 0xFFFF788E.toInt()
 }
 private val SOURCE_INDEX_PATTERN = Regex("(?:CPU|GPU) (\\d+)")
 private data class SourceOption(val reading: ThermalReading, val name: String, val variant: String)
@@ -364,10 +364,9 @@ class MainActivity : Activity() {
     private fun renderUi() {
         valueViews.clear()
         sensorSearchRows.clear()
+
         val scroll = ScrollView(this).apply {
             setBackgroundColor(Ui.BG)
-            // Keep the scroll child at natural content height. This is important in
-            // Android floating-window mode, where the viewport may be much shorter.
             clipToPadding = true
             clipChildren = true
             isFillViewport = false
@@ -376,7 +375,7 @@ class MainActivity : Activity() {
         }
         val column = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), dp(10), dp(14), dp(18))
+            setPadding(dp(16), dp(12), dp(16), dp(22))
             setBackgroundColor(Ui.BG)
             clipChildren = true
             clipToPadding = true
@@ -388,52 +387,159 @@ class MainActivity : Activity() {
         scrollView = scroll
         setContentView(scroll)
 
-        val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        fun sectionHeader(kicker: String, title: String, subtitle: String) {
+            val group = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(2), dp(2), dp(2), dp(3))
+            }
+            group.addView(label(kicker, 9f, Ui.MINT, true).apply {
+                letterSpacing = 1.25f
+            }, matchWrap(bottom = 5))
+            group.addView(label(title, 19f, Ui.WHITE, true), matchWrap())
+            group.addView(label(subtitle, 11f, Ui.MUTED, false).apply {
+                setPadding(0, dp(4), 0, 0)
+            }, matchWrap())
+            column.addView(group, matchWrap(top = 17, bottom = 8))
+        }
+
+        fun temperatureTile(title: String, detail: String, key: String, enabled: Boolean, accent: Int): LinearLayout {
+            val tile = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.TOP
+                setPadding(dp(12), dp(13), dp(10), dp(9))
+                background = GradientDrawable(
+                    GradientDrawable.Orientation.TL_BR,
+                    intArrayOf(Ui.PANEL_ALT, Ui.PANEL)
+                ).apply {
+                    cornerRadius = dp(17).toFloat()
+                    setStroke(dp(1), Ui.EDGE)
+                }
+            }
+            val head = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            head.addView(label(title, 12f, accent, true), LinearLayout.LayoutParams(0, -2, 1f))
+            head.addView(label("THERMAL", 8f, Ui.MUTED, true).apply {
+                letterSpacing = 0.5f
+            })
+            tile.addView(head, matchWrap())
+            tile.addView(label(detail, 9.5f, Ui.MUTED, false).apply {
+                setPadding(0, dp(5), 0, dp(8))
+                maxLines = 1
+            }, matchWrap())
+
+            val value = label("N/A", 27f, accent, true).apply {
+                typeface = Typeface.create("sans-serif-monospace", Typeface.BOLD)
+                setSingleLine(true)
+                includeFontPadding = false
+            }
+            valueViews[key] = value
+            tile.addView(value, matchWrap())
+
+            val visible = CheckBox(this).apply {
+                text = "Show on HUD"
+                textSize = 10f
+                setTextColor(Ui.MUTED)
+                buttonTintList = ColorStateList.valueOf(accent)
+                isChecked = enabled
+                setPadding(0, dp(4), 0, 0)
+                setOnCheckedChangeListener { _, checked ->
+                    save(if (key == "cpuTemp") config.copy(showCpuTemp = checked) else config.copy(showGpuTemp = checked))
+                }
+            }
+            tile.addView(visible, matchWrap(top = 5))
+            return tile
+        }
+
+        // App bar: branding and live overlay state.
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(15))
+        }
         val logo = ImageView(this).apply {
             setImageResource(R.mipmap.ic_launcher)
             contentDescription = "Temp HUD app icon"
             scaleType = ImageView.ScaleType.FIT_CENTER
-            background = rounded(Ui.PANEL_ALT, Ui.EDGE, 12)
-            setPadding(dp(3), dp(3), dp(3), dp(3))
+            background = rounded(Ui.PANEL_ALT, Ui.EDGE, 14)
+            setPadding(dp(4), dp(4), dp(4), dp(4))
         }
-        header.addView(logo, LinearLayout.LayoutParams(dp(42), dp(42)))
+        header.addView(logo, LinearLayout.LayoutParams(dp(48), dp(48)))
         val titleCol = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; setPadding(dp(10), 0, 0, 0)
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), 0, 0, 0)
         }
-        titleCol.addView(label("Temp HUD", 20f, Ui.WHITE, true))
-        titleCol.addView(label("GAMEPLAY THERMAL MONITOR", 9f, Ui.MUTED, false))
-        header.addView(titleCol, LinearLayout.LayoutParams(0, -2, 1f))
-        statusView = label(if (HudConfig.isRunning()) "RUNNING" else "READY", 10f,
-            if (HudConfig.isRunning()) Ui.MINT else Ui.MUTED, true).apply {
-            gravity = Gravity.CENTER; setPadding(dp(10), dp(7), dp(10), dp(7))
-            background = rounded(Ui.PANEL, Ui.EDGE, 18)
-        }
-        header.setPadding(0, dp(2), 0, dp(8))
-        header.addView(statusView)
-        column.addView(header)
-
-        column.addView(label("TEMPERATURE SNAPSHOT", 9f, Ui.MUTED, true).apply {
-            letterSpacing = 1.0f
-            setPadding(dp(3), dp(3), 0, dp(5))
-        }, matchWrap(top = 4))
-        val overall = card().apply {
-            setPadding(dp(8), dp(6), dp(8), dp(6))
-        }
-        addOverallRow(overall, "CPU", "cpuTemp", config.showCpuTemp)
-        addOverallRow(overall, "GPU", "gpuTemp", config.showGpuTemp)
-        column.addView(overall, matchWrap())
-
-        val averageSources = card().apply {
-            setPadding(dp(8), dp(5), dp(8), dp(5))
-        }
-        averageSources.addView(label("OVERALL SOURCE · EXACT VARIANT", 9f, Ui.MUTED, true).apply {
-            letterSpacing = 0.8f
-            setPadding(dp(4), dp(1), 0, dp(2))
+        titleCol.addView(label("Temp HUD", 22f, Ui.WHITE, true), matchWrap())
+        titleCol.addView(label("THERMAL CONTROL CENTRE", 9f, Ui.MUTED, true).apply {
+            letterSpacing = 0.65f
+            setPadding(0, dp(4), 0, 0)
         }, matchWrap())
-        addAverageSelector(averageSources, "CPU", config.cpuAverageVariant, true)
-        addAverageSelector(averageSources, "GPU", config.gpuAverageVariant, false)
-        column.addView(averageSources, matchWrap(top = 6))
+        header.addView(titleCol, LinearLayout.LayoutParams(0, -2, 1f))
+        statusView = label(if (HudConfig.isRunning()) "RUNNING" else "READY", 9f,
+            if (HudConfig.isRunning()) Ui.MINT else Ui.MUTED, true).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            background = rounded(Ui.PANEL_ALT, if (HudConfig.isRunning()) Ui.MINT else Ui.EDGE, 18)
+        }
+        header.addView(statusView)
+        column.addView(header, matchWrap())
 
+        // Hero dashboard: clear, separate CPU and GPU readings instead of small text rows.
+        val overview = card().apply {
+            setPadding(dp(12), dp(13), dp(12), dp(13))
+            background = rounded(Ui.PANEL, Ui.EDGE, 21)
+        }
+        val overviewHeading = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val overviewCopy = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        overviewCopy.addView(label("LIVE THERMALS", 10f, Ui.WHITE, true).apply {
+            letterSpacing = 1.0f
+        }, matchWrap())
+        overviewCopy.addView(label("Device temperature at a glance", 10f, Ui.MUTED, false).apply {
+            setPadding(0, dp(4), 0, 0)
+        }, matchWrap())
+        overviewHeading.addView(overviewCopy, LinearLayout.LayoutParams(0, -2, 1f))
+        overviewHeading.addView(label("ON-DEVICE", 8f, Ui.BLUE, true).apply {
+            setPadding(dp(8), dp(6), dp(8), dp(6))
+            background = rounded(Ui.PANEL_ALT, Ui.EDGE, 10)
+        })
+        overview.addView(overviewHeading, matchWrap(bottom = 12))
+
+        val metrics = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.TOP
+        }
+        metrics.addView(temperatureTile("CPU", "Processor", "cpuTemp", config.showCpuTemp, Ui.MINT),
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = dp(5) })
+        metrics.addView(temperatureTile("GPU", "Graphics / SoC", "gpuTemp", config.showGpuTemp, Ui.BLUE),
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(5) })
+        overview.addView(metrics, matchWrap())
+        column.addView(overview, matchWrap())
+
+        // Primary controls stay near the top so users don't need to scroll to start the HUD.
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        actions.addView(button(if (HudConfig.isRunning()) "Apply settings" else "Start floating HUD", false).apply {
+            setOnClickListener {
+                config.save(this@MainActivity)
+                startOverlay()
+            }
+        }, LinearLayout.LayoutParams(0, dp(50), 1f).apply { marginEnd = dp(6) })
+        actions.addView(button("Stop HUD", true, Ui.RED).apply {
+            setOnClickListener { stopOverlay() }
+        }, LinearLayout.LayoutParams(0, dp(50), 0.58f).apply { marginStart = dp(6) })
+        column.addView(actions, matchWrap(top = 10))
+        statusLine = label("", 11f, Ui.MINT, false).apply {
+            setPadding(dp(2), dp(7), dp(2), dp(1))
+        }
+        column.addView(statusLine, matchWrap())
+
+        sectionHeader("SENSOR SOURCES", "Choose what to monitor", "Expand a group to select the exact readings shown in your floating HUD.")
         addExpandableHeader(column, "CPU cores", coreCountLabel(), showCores, Ui.MINT) {
             showCores = !showCores
             rebuildKeepingScroll()
@@ -448,21 +554,24 @@ class MainActivity : Activity() {
         }
         if (showGpuSources) buildSourceGroups(column, true)
 
-        addExpandableHeader(column, "Available sensors", "${allSourceReadings().size}", showAllSensors, Ui.MINT) {
+        addExpandableHeader(column, "Available sensors", allSourceReadings().size.toString(), showAllSensors, Ui.MINT) {
             showAllSensors = !showAllSensors
             rebuildKeepingScroll()
             requestCatalogMode(needsCatalog())
         }
         if (showAllSensors) buildAllSensors(column)
 
-        addExpandableHeader(column, "Custom rows", "${config.customEntries.size}", showCustomEditor, Ui.MINT) {
+        addExpandableHeader(column, "Custom rows", config.customEntries.size.toString(), showCustomEditor, Ui.MINT) {
             showCustomEditor = !showCustomEditor
             rebuildKeepingScroll()
             requestCatalogMode(needsCatalog())
         }
         if (showCustomEditor) buildCustomRows(column)
 
-        val refreshCard = card()
+        sectionHeader("SAMPLING", "Update frequency", "Control how often sensor readings refresh; faster polling may use more power.")
+        val refreshCard = card().apply {
+            setPadding(dp(10), dp(9), dp(10), dp(10))
+        }
         addSlider(refreshCard, "Refresh interval", config.refreshMs, 500, 3000, 10,
             "0.50 s", "3.00 s", { String.format(Locale.US, "%.2f s", it / 1000f) }) {
             save(config.copy(refreshMs = it))
@@ -470,22 +579,45 @@ class MainActivity : Activity() {
         }
         column.addView(refreshCard, matchWrap())
 
-        column.addView(button(if (showDisplaySettings) "Hide display settings" else "Display & position", true).apply {
-            setOnClickListener { showDisplaySettings = !showDisplaySettings; rebuildKeepingScroll() }
-        }, matchWrap(top = 8, bottom = 3))
+        sectionHeader("DISPLAY & POSITION", "Shape your overlay", "Tune placement, opacity and size without changing the selected sensors.")
+        val displayRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12), dp(11), dp(10), dp(11))
+            background = rounded(Ui.PANEL, Ui.EDGE, 15)
+        }
+        val displayMark = View(this).apply { background = rounded(Ui.BLUE, Ui.BLUE, 3) }
+        displayRow.addView(displayMark, LinearLayout.LayoutParams(dp(3), dp(38)).apply { marginEnd = dp(11) })
+        val displayCopy = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        displayCopy.addView(label("Overlay appearance", 13f, Ui.WHITE, true), matchWrap())
+        displayCopy.addView(label("Position lock · opacity · size", 10f, Ui.MUTED, false).apply {
+            setPadding(0, dp(4), 0, 0)
+        }, matchWrap())
+        displayRow.addView(displayCopy, LinearLayout.LayoutParams(0, -2, 1f))
+        val editButton = button(if (showDisplaySettings) "Hide" else "Edit", true, Ui.BLUE).apply {
+            minHeight = dp(36)
+            minimumHeight = dp(36)
+            setPadding(dp(7), 0, dp(7), 0)
+        }
+        val toggleDisplay = {
+            showDisplaySettings = !showDisplaySettings
+            rebuildKeepingScroll()
+        }
+        editButton.setOnClickListener { toggleDisplay() }
+        displayRow.setOnClickListener { toggleDisplay() }
+        column.addView(displayRow, matchWrap())
         if (showDisplaySettings) buildDisplaySettings(column)
 
-        val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        actions.addView(button("Apply & Start", false).apply {
-            setOnClickListener { config.save(this@MainActivity); startOverlay() }
-        }, LinearLayout.LayoutParams(0, dp(46), 1f).apply { marginEnd = dp(6) })
-        actions.addView(button("Stop overlay", true).apply { setOnClickListener { stopOverlay() } },
-            LinearLayout.LayoutParams(0, dp(46), 1f).apply { marginStart = dp(6) })
-        column.addView(actions, matchWrap(top = 10))
-        statusLine = label("", 11f, Ui.MINT, false).apply { setPadding(0, dp(8), 0, 0) }
-        column.addView(statusLine)
-        column.addView(label("Android 11+  ·  local only  ·  no analytics", 10f, Ui.MUTED, false)
-            .apply { setPadding(0, dp(8), 0, 0) })
+        val footer = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(3), dp(17), dp(3), 0)
+        }
+        footer.addView(label("LOCAL ONLY", 9f, Ui.MINT, true).apply {
+            letterSpacing = 0.8f
+        }, wrapWrap(end = 9))
+        footer.addView(label("Android 11+  ·  no analytics", 10f, Ui.MUTED, false), LinearLayout.LayoutParams(0, -2, 1f))
+        column.addView(footer, matchWrap())
         updateValues()
     }
 

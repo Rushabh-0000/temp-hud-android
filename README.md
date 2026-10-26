@@ -1,8 +1,15 @@
 # Temp HUD
 
-Current development version: **0.7.9**.
+Current development version: **0.7.10**.
 
 Compact MangoHud-inspired Android temperature overlay for Android 11+, written in Kotlin using Android's built-in Material-themed Views to keep the APK lean.
+
+
+## Dashboard redesign (0.7.10)
+- Rebuilt the home screen around large, separate CPU and GPU temperature tiles with clearer reading hierarchy.
+- Moved the primary floating-HUD start/stop controls directly below the live dashboard.
+- Grouped sensor selection, refresh frequency, and appearance/position controls under labelled sections.
+- Updated the accent palette for stronger contrast and a more distinct thermal-monitor dashboard.
 
 ## Low-memory background mode
 - The overlay service uses a background-priority sensor thread in the app's single process. Leaving the app finishes/removes the settings Activity task and releases its view tree while the foreground service remains. This avoids the extra ART/runtime overhead from running a second app process.
