@@ -1,14 +1,14 @@
 # Temp HUD — Version 2
 
-The root project is a clean V2 rebuild. The original Android project is preserved under [version-1/](version-1/); V2 reuses only the thermal reader, overlay renderer, and overlay settings concepts.
+The root app is a clean rebuild. Original Version 1 source and project files remain archived in [version-1/](version-1/). V2 reuses the thermal reader, overlay renderer, and overlay settings concepts only.
 
-- Minimal full-screen UI with no app header/logo or extra dashboard copy.
-- CPU, GPU and CPU 0–7 tiles begin grey; tapping a tile toggles it and active tiles glow green.
-- The overlay starts automatically when at least one tile, picked sensor or custom row is enabled; it stops when nothing remains selected. No Start/Stop buttons.
+- Minimal full-screen UI: no in-app header, app logo, dashboard copy, or Start/Stop buttons.
+- Grey CPU, GPU and CPU 0–7 tiles toggle their overlay rows; active tiles glow green.
+- Overlay starts automatically when any metric, sensor row or custom row is enabled, and stops when nothing remains selected.
 - CPU averages cpuss-0-usr and cpuss-1-usr. GPU averages gpuss-0-usr and gpuss-1-usr. Only zone types ending in -usr are read; -step is ignored.
-- The All sensors list has a manual Refresh action and allows sensor rows to be toggled onto the overlay.
-- Custom rows let a sensor be assigned a custom label.
-- Settings include refresh interval, scale, text brightness, background opacity, position and position lock.
-- Sensor reads run off the UI thread. The Activity sampler stops when the screen is hidden; the overlay sampler stops when the overlay service is destroyed.
+- All sensors shows live values and has a manual Refresh action. Tap a source row to toggle it onto the overlay.
+- Custom rows let a selected source be displayed under a user-defined name.
+- Overlay settings are at the bottom: refresh interval, scale, text brightness, background opacity, position and lock.
+- Sensor reads run off the UI thread. The Activity sampler stops while hidden; the overlay sampler stops when the service is destroyed.
 
-Polling uses some power while active; zero battery drain cannot be guaranteed.
+Polling necessarily uses some power while active; zero battery drain cannot be guaranteed.

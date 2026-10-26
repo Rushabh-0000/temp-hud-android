@@ -16,8 +16,8 @@ android {
         applicationId = "com.tempoverlay.mangohud"
         minSdk = 30
         targetSdk = 36
-        versionCode = (providers.gradleProperty("VERSION_CODE").orNull ?: "19").toInt()
-        versionName = providers.gradleProperty("VERSION_NAME").orNull ?: "0.7.8"
+        versionCode = (providers.gradleProperty("VERSION_CODE").orNull ?: "1").toInt()
+        versionName = providers.gradleProperty("VERSION_NAME").orNull ?: "1.0.0"
     }
 
     buildFeatures {
