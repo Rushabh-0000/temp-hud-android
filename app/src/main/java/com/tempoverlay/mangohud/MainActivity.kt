@@ -51,7 +51,7 @@ private data class SourceOption(val reading: ThermalReading, val name: String, v
 class MainActivity : Activity() {
     private val uiHandler = Handler(Looper.getMainLooper())
     private val reader = SensorReader()
-    private var config = HudConfig()
+    @Volatile private var config = HudConfig()
     private var snapshot = TemperatureSnapshot()
     private var catalogSnapshot = TemperatureSnapshot()
     private var screenActive = false
@@ -61,10 +61,10 @@ class MainActivity : Activity() {
     private var scrollView: ScrollView? = null
     private var statusView: TextView? = null
     private var statusLine: TextView? = null
-    private var showCores = false
-    private var showGpuSources = false
-    private var showAllSensors = false
-    private var showCustomEditor = false
+    @Volatile private var showCores = false
+    @Volatile private var showGpuSources = false
+    @Volatile private var showAllSensors = false
+    @Volatile private var showCustomEditor = false
     private var showDisplaySettings = false
     private var searchText = ""
     private val valueViews = linkedMapOf<String, TextView>()
@@ -74,10 +74,12 @@ class MainActivity : Activity() {
             if (intent.action != OverlayService.ACTION_SNAPSHOT) return
             val raw = intent.getStringExtra(OverlayService.EXTRA_SNAPSHOT) ?: return
             val fresh = TemperatureSnapshot.fromJson(raw) ?: return
+            val previousIds = snapshotSignature(snapshot)
             snapshot = fresh
+            catalogSnapshot = if (needsCatalog()) fresh else TemperatureSnapshot()
             statusView?.text = "RUNNING"
             statusView?.setTextColor(Ui.MINT)
-            updateValues()
+            if (needsCatalog() && previousIds != snapshotSignature(fresh)) rebuildKeepingScroll() else updateValues()
         }
     }
 
@@ -87,13 +89,14 @@ class MainActivity : Activity() {
             if (!screenActive || HudConfig.isRunning(this@MainActivity)) return
             val start = SystemClock.uptimeMillis()
             val cfg = config
-            val fullScan = showAllSensors || showCustomEditor
+            val fullScan = needsCatalog()
+            val previousIds = snapshotSignature(snapshot)
             val fresh = reader.sample(cfg, includeAllForSettings = fullScan)
             uiHandler.post {
                 if (screenActive && !HudConfig.isRunning(this@MainActivity)) {
                     snapshot = fresh
-                    if (fullScan) catalogSnapshot = fresh
-                    updateValues()
+                    catalogSnapshot = if (fullScan) fresh else TemperatureSnapshot()
+                    if (fullScan && previousIds != snapshotSignature(fresh)) rebuildKeepingScroll() else updateValues()
                 }
             }
             val elapsed = SystemClock.uptimeMillis() - start
@@ -147,6 +150,7 @@ class MainActivity : Activity() {
     override fun onPause() {
         screenActive = false
         stopSampler()
+        requestCatalogMode(false)
         super.onPause()
     }
 
@@ -169,7 +173,7 @@ class MainActivity : Activity() {
         samplingThread = HandlerThread("TempHudSettings", Process.THREAD_PRIORITY_BACKGROUND).also { it.start() }
         samplingHandler = Handler(samplingThread!!.looper)
         samplingHandler?.post {
-            val first = reader.sample(config, includeAllForSettings = true)
+            val first = reader.sample(config, includeAllForSettings = needsCatalog())
             uiHandler.post {
                 if (!screenActive || HudConfig.isRunning(this)) return@post
                 snapshot = first
@@ -188,31 +192,28 @@ class MainActivity : Activity() {
         samplingThread = null
     }
 
+    private fun needsCatalog(): Boolean =
+        showCores || showGpuSources || showAllSensors || showCustomEditor
+
     private fun requestCatalogOnce() {
-        Thread({
-            val fresh = reader.sample(HudConfig.load(this), includeAllForSettings = true)
-            uiHandler.post {
-                if (!screenActive) return@post
-                catalogSnapshot = fresh
-                if (!HudConfig.isRunning(this)) snapshot = fresh
-                updateValues()
-                rebuildKeepingScroll()
-            }
-        }, "TempHudCatalog").apply { priority = Thread.MIN_PRIORITY; start() }
+        requestCatalogMode(needsCatalog())
+    }
+
+    private fun requestCatalogMode(enabled: Boolean) {
+        if (!HudConfig.isRunning(this)) return
+        try {
+            startService(
+                Intent(this, OverlayService::class.java)
+                    .setAction(OverlayService.ACTION_CATALOG)
+                    .putExtra(OverlayService.EXTRA_CATALOG, enabled)
+            )
+        } catch (_: Exception) { }
     }
 
     private fun scanCatalog() {
-        val cfg = config
-        Thread({
-            val fresh = reader.sample(cfg, includeAllForSettings = true)
-            uiHandler.post {
-                if (!screenActive) return@post
-                catalogSnapshot = fresh
-                if (!HudConfig.isRunning(this)) snapshot = fresh
-                updateValues()
-                rebuildKeepingScroll()
-            }
-        }, "TempHudSensorScan").apply { priority = Thread.MIN_PRIORITY; start() }
+        // No extra reader thread: the current sampler broadens its next scheduled sample.
+        requestCatalogMode(true)
+        rebuildKeepingScroll()
     }
 
     private fun save(next: HudConfig) {
@@ -294,28 +295,32 @@ class MainActivity : Activity() {
         column.addView(divider(), matchWrap(top = 7, bottom = 7))
         addExpandableHeader(column, "CPU cores", coreCountLabel(), showCores, Ui.MINT) {
             showCores = !showCores
-            if (showCores && allSourceReadings().isEmpty()) scanCatalog() else rebuildKeepingScroll()
+            rebuildKeepingScroll()
+            requestCatalogMode(needsCatalog())
         }
         if (showCores) buildSourceGroups(column, false)
 
         column.addView(divider(), matchWrap(top = 7, bottom = 7))
         addExpandableHeader(column, "GPU cores", gpuCountLabel(), showGpuSources, Ui.BLUE) {
             showGpuSources = !showGpuSources
-            if (showGpuSources && allSourceReadings().isEmpty()) scanCatalog() else rebuildKeepingScroll()
+            rebuildKeepingScroll()
+            requestCatalogMode(needsCatalog())
         }
         if (showGpuSources) buildSourceGroups(column, true)
 
         column.addView(divider(), matchWrap(top = 7, bottom = 7))
         addExpandableHeader(column, "Available sensors", "${allSourceReadings().size}", showAllSensors, Ui.MINT) {
             showAllSensors = !showAllSensors
-            if (showAllSensors) scanCatalog() else rebuildKeepingScroll()
+            rebuildKeepingScroll()
+            requestCatalogMode(needsCatalog())
         }
         if (showAllSensors) buildAllSensors(column)
 
         column.addView(divider(), matchWrap(top = 7, bottom = 7))
         addExpandableHeader(column, "Custom rows", "${config.customEntries.size}", showCustomEditor, Ui.MINT) {
             showCustomEditor = !showCustomEditor
-            if (showCustomEditor) scanCatalog() else rebuildKeepingScroll()
+            rebuildKeepingScroll()
+            requestCatalogMode(needsCatalog())
         }
         if (showCustomEditor) buildCustomRows(column)
 
@@ -348,12 +353,11 @@ class MainActivity : Activity() {
     }
 
     private fun restartSamplerForNewInterval() {
-        if (screenActive && !HudConfig.isRunning(this)) startSampler()
-        Intent(this, OverlayService::class.java).setAction(OverlayService.ACTION_START).let {
-            if (HudConfig.isRunning(this)) {
-                try { startService(it) } catch (_: Exception) { }
-            }
+        if (screenActive && !HudConfig.isRunning(this)) {
+            samplingHandler?.removeCallbacks(poller)
+            samplingHandler?.postDelayed(poller, config.refreshMs.toLong())
         }
+        // The active overlay adopts the new interval at its next scheduled sample.
     }
 
     private fun rebuildKeepingScroll() {
@@ -384,7 +388,7 @@ class MainActivity : Activity() {
         box.addView(label(title, 11f, Ui.MUTED, false), LinearLayout.LayoutParams(0, -2, 1f))
         val group = RadioGroup(this).apply { orientation = RadioGroup.HORIZONTAL }
         val usr = RadioButton(this).apply {
-            text = "usr"; textSize = 11f; setTextColor(Ui.WHITE)
+            text = "Use"; textSize = 11f; setTextColor(Ui.WHITE)
             buttonTintList = ColorStateList.valueOf(if (cpu) Ui.MINT else Ui.BLUE)
             id = View.generateViewId(); isChecked = current != "step"
         }
@@ -416,42 +420,56 @@ class MainActivity : Activity() {
 
     private fun buildSourceGroups(parent: LinearLayout, isGpu: Boolean) {
         val grouped = allSourceReadings().mapNotNull { reading ->
-            val text = if (isGpu) SensorSourceLabels.gpuSourceOption(reading) else SensorSourceLabels.cpuCoreOption(reading)
-            text?.let {
-                val name = it.substringBefore(" · ")
-                val variant = it.substringAfter(" · ", "")
-                SourceOption(reading, name, if (variant == "step") "step" else if (variant == "usr") "usr" else "")
-            }
+            val display = if (isGpu) SensorSourceLabels.gpuSourceOption(reading) else SensorSourceLabels.cpuCoreOption(reading)
+            val variant = SensorSourceLabels.sourceVariant(reading) ?: return@mapNotNull null
+            if (display == null) return@mapNotNull null
+            SourceOption(reading, display.substringBefore(" · "), variant)
         }.groupBy { it.name }.toSortedMap(compareBySourceName())
 
         if (grouped.isEmpty()) {
-            val message = if (isGpu) "No GPU-labelled thermal sources are exposed." else "No per-core CPU sources are exposed."
+            val message = if (isGpu) "No paired GPU Use/Step sources are exposed." else "No paired CPU Use/Step sources are exposed."
             parent.addView(label(message, 11f, Ui.MUTED, false).apply {
                 setPadding(dp(8), dp(6), dp(8), dp(10))
             })
             return
         }
+
         for ((name, options) in grouped) {
             val groupCard = card().apply { setPadding(dp(8), dp(4), dp(8), dp(4)) }
             groupCard.addView(label(name, 12f, if (isGpu) Ui.BLUE else Ui.MINT, true).apply { setPadding(0, dp(5), 0, dp(2)) })
             val sourceRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-            val ordered = options.sortedBy { if (it.variant == "usr") 0 else if (it.variant == "step") 1 else 2 }
-            ordered.forEach { option ->
-                val cell = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(2), dp(3), dp(2), dp(3)) }
-                val check = CheckBox(this).apply {
-                    text = if (option.variant.isBlank()) "sensor" else option.variant
-                    textSize = 11f
-                    setTextColor(Ui.WHITE)
-                    buttonTintList = ColorStateList.valueOf(if (isGpu) Ui.BLUE else Ui.MINT)
-                    isChecked = config.selectedThermalSensors.contains(option.reading.id)
-                    setOnCheckedChangeListener { _, enabled ->
-                        save(config.withMetric(HudConfig.SENSOR_PREFIX + option.reading.id, enabled))
-                    }
+            for (variant in listOf("usr", "step")) {
+                val option = options.firstOrNull { it.variant == variant }
+                val cell = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(2), dp(3), dp(2), dp(3))
                 }
-                cell.addView(check, LinearLayout.LayoutParams(0, dp(40), 1f))
-                val value = label("N/A", 11f, Ui.MINT, true).apply { typeface = Typeface.MONOSPACE; gravity = Gravity.CENTER_VERTICAL or Gravity.END; minWidth = dp(62) }
-                valueViews[HudConfig.SENSOR_PREFIX + option.reading.id] = value
-                cell.addView(value, wrapWrap())
+                if (option == null) {
+                    cell.addView(
+                        label(if (variant == "usr") "Use —" else "Step —", 10f, Ui.MUTED, false),
+                        LinearLayout.LayoutParams(0, dp(40), 1f)
+                    )
+                } else {
+                    val check = CheckBox(this).apply {
+                        text = if (variant == "usr") "Use" else "Step"
+                        textSize = 10f
+                        setTextColor(Ui.WHITE)
+                        buttonTintList = ColorStateList.valueOf(if (isGpu) Ui.BLUE else Ui.MINT)
+                        isChecked = config.selectedThermalSensors.contains(option.reading.id)
+                        setOnCheckedChangeListener { _, enabled ->
+                            save(config.withMetric(HudConfig.SENSOR_PREFIX + option.reading.id, enabled))
+                        }
+                    }
+                    cell.addView(check, LinearLayout.LayoutParams(0, dp(40), 1f))
+                    val value = label(temp(option.reading), 10.5f, Ui.MINT, true).apply {
+                        typeface = Typeface.MONOSPACE
+                        gravity = Gravity.CENTER_VERTICAL or Gravity.END
+                        minWidth = dp(57)
+                    }
+                    valueViews[HudConfig.SENSOR_PREFIX + option.reading.id] = value
+                    cell.addView(value, wrapWrap())
+                }
                 sourceRow.addView(cell, LinearLayout.LayoutParams(0, -2, 1f))
             }
             groupCard.addView(sourceRow, matchWrap())
@@ -590,6 +608,9 @@ class MainActivity : Activity() {
         col.addView(limits, matchWrap())
         parent.addView(col, matchWrap())
     }
+
+    private fun snapshotSignature(value: TemperatureSnapshot): String =
+        value.allSensors.joinToString(separator = "|") { it.id }
 
     private fun allSourceReadings(): List<ThermalReading> {
         val map = linkedMapOf<String, ThermalReading>()
