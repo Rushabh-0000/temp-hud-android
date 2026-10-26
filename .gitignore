@@ -11,6 +11,7 @@ local.properties
 *.p12
 *.pem
 
+
 # Local release signing material — never commit these files
 github-release-secrets.txt
 *.secrets.txt
