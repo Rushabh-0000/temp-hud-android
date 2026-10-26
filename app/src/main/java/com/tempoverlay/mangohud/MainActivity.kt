@@ -62,7 +62,7 @@ class MainActivity : Activity() {
     private var sensorRefreshButton: TextView? = null
     private var overlayControlButton: TextView? = null
     private var overlayControlStatus: TextView? = null
-    private var sensorsExpanded = false
+    @Volatile private var sensorsExpanded = false
     private var customRowsContainer: LinearLayout? = null
     private var customNameInput: EditText? = null
     private var customSensorSpinner: Spinner? = null
@@ -79,7 +79,6 @@ class MainActivity : Activity() {
                 val idsChanged = catalogReadings.map { it.id } != fresh.allSensors.map { it.id }
                 catalogReadings = fresh.allSensors
                 if (idsChanged) rebuildSensorRows() else updateSensorRows()
-                updateCustomSensorSpinner()
             }
             updateLiveValues()
         }
