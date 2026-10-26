@@ -20,6 +20,7 @@ Compact MangoHud-inspired Android temperature overlay for Android 11+, written i
 ## UI refresh and locked-position fix in 0.7.9
 - The settings screen remains a native View hierarchy in a vertical ScrollView with natural WRAP_CONTENT content height. Section cards now use a clearer title/description/count hierarchy, a refreshed green/cyan palette, and better spacing. Expanded sections, sensor search, and scroll position survive Activity recreation.
 - The lock toggle now pins the overlay at its current on-screen coordinates and persists that anchor. Overlay samples re-read the latest config before updating the view so an old in-flight sensor sample cannot restore a stale lock or position after the user changes settings.
+- Replaced the launcher artwork with a lightweight vector thermometer icon, an Android adaptive foreground/monochrome version, and a matching green/cyan theme accent.
 - The settings header uses the app launcher icon; live readings and CPU/GPU average-source selection are grouped into distinct compact cards. Buttons provide touch ripple feedback. The interface remains built with native Android Views to avoid adding Compose runtime size.
 
 ## Layout, sensor and low-allocation fixes in 0.7.5
