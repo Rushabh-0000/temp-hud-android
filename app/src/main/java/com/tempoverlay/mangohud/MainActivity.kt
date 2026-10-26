@@ -219,7 +219,7 @@ class MainActivity : Activity() {
         buildCustomSection(content)
         buildSettingsSection(content)
 
-        scroll.addView(content, ScrollView.LayoutParams(
+        scroll.addView(content, android.widget.FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT
         ))
@@ -354,7 +354,7 @@ class MainActivity : Activity() {
         val box = panel().apply { setPadding(dp(9), dp(9), dp(9), dp(8)) }
         val name = EditText(this).apply {
             hint = "Custom name"
-            singleLine = true
+            isSingleLine = true
             textSize = 12f
             setTextColor(V2Colors.WHITE)
             setHintTextColor(V2Colors.MUTED)
@@ -542,7 +542,7 @@ class MainActivity : Activity() {
         labelRow.addView(value, wrapWrap())
         row.addView(labelRow, matchWrap())
         val seek = SeekBar(this).apply {
-            max = ((max - min) / step).coerceAtLeast(1)
+            this.max = ((max - min) / step).coerceAtLeast(1)
             progress = ((current.coerceIn(min, max) - min) / step).coerceIn(0, this.max)
             progressTintList = ColorStateList.valueOf(V2Colors.GREEN)
             thumbTintList = ColorStateList.valueOf(V2Colors.GREEN)
@@ -714,7 +714,7 @@ class MainActivity : Activity() {
         tile.card.elevation = dp(if (active) 6f else 0f).toFloat()
         tile.name.setTextColor(if (active) V2Colors.GREEN else V2Colors.MUTED)
         if (active) tile.name.setShadowLayer(dp(4f).toFloat(), 0f, 0f, V2Colors.GREEN_DARK)
-        else tile.name.clearShadowLayer()
+        else tile.name.setShadowLayer(0f, 0f, 0f, android.graphics.Color.TRANSPARENT)
     }
 
     private fun styleSensorRow(row: LinearLayout, active: Boolean) {
@@ -764,6 +764,8 @@ class MainActivity : Activity() {
             cornerRadius = dp(radiusDp.toFloat()).toFloat()
             setStroke(dp(strokeDp.toFloat()), stroke)
         }
+
+    private fun dp(value: Int): Int = dp(value.toFloat())
 
     private fun dp(value: Float): Int =
         (value * resources.displayMetrics.density + 0.5f).toInt()
