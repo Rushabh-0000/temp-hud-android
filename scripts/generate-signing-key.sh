@@ -2,7 +2,12 @@
 set -euo pipefail
 
 # Generates a persistent Android release keystore and the copy/paste values for GitHub Actions.
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -d "$SCRIPT_DIR/../app" && -d "$SCRIPT_DIR/../.github" ]]; then
+  ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+else
+  ROOT_DIR="$SCRIPT_DIR"
+fi
 KEYSTORE_PATH="$ROOT_DIR/temp-hud-release.p12"
 SECRETS_PATH="$ROOT_DIR/github-release-secrets.txt"
 

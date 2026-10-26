@@ -174,7 +174,7 @@ data class HudConfig(
                 entries.put(JSONObject().put("id", entry.id).put("label", entry.label).put("sensorId", entry.sensorId))
             }
             val selected = JSONArray()
-            config.selectedThermalSensors.sorted().forEach(selected::put)
+            config.selectedThermalSensors.sorted().forEach { selected.put(it) }
             val json = JSONObject()
                 .put("format", 1)
                 .put("showCpuTemp", config.showCpuTemp)
@@ -207,40 +207,50 @@ data class HudConfig(
             }
         }
 
-        private fun readCrossProcessConfig(context: Context): HudConfig? = try {
-            val atomic = AtomicFile(File(context.filesDir, CONFIG_FILE))
-            if (!atomic.baseFile.exists()) return null
-            val json = atomic.openRead().bufferedReader(Charsets.UTF_8).use { JSONObject(it.readText()) }
-            if (json.optInt("format", 0) != 1) return null
-            val selectedJson = json.optJSONArray("selectedThermalSensors") ?: JSONArray()
-            val selected = buildSet {
-                for (i in 0 until selectedJson.length()) {
-                    selectedJson.optString(i).takeIf { it.isNotBlank() }?.let(::add)
+        private fun readCrossProcessConfig(context: Context): HudConfig? {
+            return try {
+                val atomic = AtomicFile(File(context.filesDir, CONFIG_FILE))
+                if (!atomic.baseFile.exists()) {
+                    null
+                } else {
+                    val json = atomic.openRead().bufferedReader(Charsets.UTF_8).use { JSONObject(it.readText()) }
+                    if (json.optInt("format", 0) != 1) {
+                        null
+                    } else {
+                        val selectedJson = json.optJSONArray("selectedThermalSensors") ?: JSONArray()
+                        val selected = buildSet {
+                            for (i in 0 until selectedJson.length()) {
+                                selectedJson.optString(i).takeIf { it.isNotBlank() }?.let(::add)
+                            }
+                        }
+                        val entries = parseEntries((json.optJSONArray("customEntries") ?: JSONArray()).toString())
+                        HudConfig(
+                            showCpuTemp = json.optBoolean("showCpuTemp", true),
+                            showGpuTemp = json.optBoolean("showGpuTemp", true),
+                            showCore0Temp = json.optBoolean("showCore0Temp", false),
+                            showCore1Temp = json.optBoolean("showCore1Temp", false),
+                            showCore2Temp = json.optBoolean("showCore2Temp", false),
+                            showCore3Temp = json.optBoolean("showCore3Temp", false),
+                            showCore4Temp = json.optBoolean("showCore4Temp", false),
+                            showCore5Temp = json.optBoolean("showCore5Temp", false),
+                            showCore6Temp = json.optBoolean("showCore6Temp", false),
+                            showCore7Temp = json.optBoolean("showCore7Temp", false),
+                            selectedThermalSensors = selected,
+                            customEntries = entries,
+                            refreshMs = json.optInt("refreshMs", 1500).coerceIn(500, 5000),
+                            backgroundOpacity = json.optInt("backgroundOpacity", 0).coerceIn(0, 65),
+                            scalePercent = json.optInt("scalePercent", 100).coerceIn(70, 115),
+                            textBrightness = json.optInt("textBrightness", 100).coerceIn(35, 100),
+                            lockPosition = json.optBoolean("lockPosition", false),
+                            positionXDp = json.optInt("positionXDp", 8).coerceAtLeast(0),
+                            positionYDp = json.optInt("positionYDp", 100).coerceAtLeast(0)
+                        )
+                    }
                 }
+            } catch (_: Exception) {
+                null
             }
-            val entries = parseEntries((json.optJSONArray("customEntries") ?: JSONArray()).toString())
-            HudConfig(
-                showCpuTemp = json.optBoolean("showCpuTemp", true),
-                showGpuTemp = json.optBoolean("showGpuTemp", true),
-                showCore0Temp = json.optBoolean("showCore0Temp", false),
-                showCore1Temp = json.optBoolean("showCore1Temp", false),
-                showCore2Temp = json.optBoolean("showCore2Temp", false),
-                showCore3Temp = json.optBoolean("showCore3Temp", false),
-                showCore4Temp = json.optBoolean("showCore4Temp", false),
-                showCore5Temp = json.optBoolean("showCore5Temp", false),
-                showCore6Temp = json.optBoolean("showCore6Temp", false),
-                showCore7Temp = json.optBoolean("showCore7Temp", false),
-                selectedThermalSensors = selected,
-                customEntries = entries,
-                refreshMs = json.optInt("refreshMs", 1500).coerceIn(500, 5000),
-                backgroundOpacity = json.optInt("backgroundOpacity", 0).coerceIn(0, 65),
-                scalePercent = json.optInt("scalePercent", 100).coerceIn(70, 115),
-                textBrightness = json.optInt("textBrightness", 100).coerceIn(35, 100),
-                lockPosition = json.optBoolean("lockPosition", false),
-                positionXDp = json.optInt("positionXDp", 8).coerceAtLeast(0),
-                positionYDp = json.optInt("positionYDp", 100).coerceAtLeast(0)
-            )
-        } catch (_: Exception) { null }
+        }
 
         fun isRunning(context: Context): Boolean {
             val marker = File(context.filesDir, RUNNING_FILE)

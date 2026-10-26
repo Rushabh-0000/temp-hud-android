@@ -172,16 +172,20 @@ private fun SettingsScreen() {
         }
         try {
             val intent = Intent(context, OverlayService::class.java).setAction(OverlayService.ACTION_START)
+            HudConfig.setRunning(context, true)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent) else context.startService(intent)
             overlayActive = true
             status = "Overlay applied."
         } catch (e: Exception) {
+            HudConfig.setRunning(context, false)
+            overlayActive = false
             status = "Could not start overlay: ${e.javaClass.simpleName}"
         }
     }
 
     fun stopOverlay() {
         context.stopService(Intent(context, OverlayService::class.java))
+        HudConfig.setRunning(context, false)
         overlayActive = false
         status = "Overlay stopped."
     }
