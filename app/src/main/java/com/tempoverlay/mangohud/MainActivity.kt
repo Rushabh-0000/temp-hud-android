@@ -74,6 +74,9 @@ class MainActivity : Activity() {
             val fresh = TemperatureSnapshot.fromJson(
                 intent.getStringExtra(OverlayService.EXTRA_SNAPSHOT) ?: return
             ) ?: return
+            // The service persists the exact on-screen position when lock state changes.
+            // Reload its latest config so later setting edits cannot restore a stale position.
+            config = HudConfig.load(context)
             snapshot = fresh
             if (intent.getBooleanExtra(OverlayService.EXTRA_CATALOG_COMPLETE, false)) {
                 val idsChanged = catalogReadings.map { it.id } != fresh.allSensors.map { it.id }
