@@ -89,9 +89,13 @@ class MainActivity : Activity() {
             val cfg = config
             val fullScan = showAllSensors || showCustomEditor
             val fresh = reader.sample(cfg, includeAllForSettings = fullScan)
-            snapshot = fresh
-            if (fullScan) catalogSnapshot = fresh
-            updateValues()
+            uiHandler.post {
+                if (screenActive && !HudConfig.isRunning(this@MainActivity)) {
+                    snapshot = fresh
+                    if (fullScan) catalogSnapshot = fresh
+                    updateValues()
+                }
+            }
             val elapsed = SystemClock.uptimeMillis() - start
             bgHandler.postDelayed(this, (cfg.refreshMs.toLong() - elapsed).coerceAtLeast(100L))
         }

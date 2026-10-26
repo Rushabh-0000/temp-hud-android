@@ -1,6 +1,6 @@
 # Temp HUD
 
-Compact MangoHud-inspired Android temperature overlay for Android 11+, written in Kotlin with Jetpack Compose Material 3.
+Compact MangoHud-inspired Android temperature overlay for Android 11+, written in Kotlin using Android's built-in Material-themed Views to keep the APK lean.
 
 ## Low-memory background mode
 - The floating overlay service runs in a dedicated Android process (`:overlay`) and uses a background-priority sensor thread. The UI process is not needed to keep the HUD visible.
