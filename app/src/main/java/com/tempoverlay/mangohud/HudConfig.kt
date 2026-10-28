@@ -1,6 +1,7 @@
 package com.tempoverlay.mangohud
 
 import android.content.Context
+import android.content.res.Configuration
 import org.json.JSONObject
 
 data class HudConfig(
@@ -15,13 +16,19 @@ data class HudConfig(
     val cpuAverageVariant: String = "usr",
     val gpuAverageVariant: String = "usr",
     val lockPosition: Boolean = false,
+    // positionXDp/positionYDp refer to the current device orientation.
+    // Persist portrait and landscape anchors independently so rotating never overwrites the other.
     val positionXDp: Int = 8,
     val positionYDp: Int = 100,
+    val portraitPositionXDp: Int = 8,
+    val portraitPositionYDp: Int = 100,
+    val landscapePositionXDp: Int = 8,
+    val landscapePositionYDp: Int = 100,
     val overlayPaused: Boolean = false,
     val sensorOverlayNames: Map<String, String> = emptyMap()
 ) {
     fun save(context: Context) {
-        val stable = copy(
+        val normalized = copy(
             selectedThermalSensors = selectedThermalSensors.toSet(),
             selectedCpuCores = selectedCpuCores.filter { it in 0..7 }.toSet(),
             sensorOverlayNames = sensorOverlayNames.filterValues { it.isNotBlank() },
@@ -32,8 +39,24 @@ data class HudConfig(
             cpuAverageVariant = cpuAverageVariant.normalizedVariant(),
             gpuAverageVariant = gpuAverageVariant.normalizedVariant(),
             positionXDp = positionXDp.coerceAtLeast(0),
-            positionYDp = positionYDp.coerceAtLeast(0)
+            positionYDp = positionYDp.coerceAtLeast(0),
+            portraitPositionXDp = portraitPositionXDp.coerceAtLeast(0),
+            portraitPositionYDp = portraitPositionYDp.coerceAtLeast(0),
+            landscapePositionXDp = landscapePositionXDp.coerceAtLeast(0),
+            landscapePositionYDp = landscapePositionYDp.coerceAtLeast(0)
         )
+        // Save the active coordinates only to the orientation that is currently shown.
+        val stable = if (context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+            normalized.copy(
+                landscapePositionXDp = normalized.positionXDp,
+                landscapePositionYDp = normalized.positionYDp
+            )
+        } else {
+            normalized.copy(
+                portraitPositionXDp = normalized.positionXDp,
+                portraitPositionYDp = normalized.positionYDp
+            )
+        }
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putBoolean("cpu_temp", stable.showCpuTemp)
             .putBoolean("gpu_temp", stable.showGpuTemp)
@@ -51,8 +74,13 @@ data class HudConfig(
             .putString("gpu_average_variant", stable.gpuAverageVariant)
             .putBoolean("lock_position", stable.lockPosition)
             .putBoolean("overlay_paused", stable.overlayPaused)
+            // Keep legacy shared coordinates too, for older versions and migration.
             .putInt("position_x_dp", stable.positionXDp)
             .putInt("position_y_dp", stable.positionYDp)
+            .putInt("position_portrait_x_dp", stable.portraitPositionXDp)
+            .putInt("position_portrait_y_dp", stable.portraitPositionYDp)
+            .putInt("position_landscape_x_dp", stable.landscapePositionXDp)
+            .putInt("position_landscape_y_dp", stable.landscapePositionYDp)
             .apply()
         cachedConfig = stable
     }
@@ -86,10 +114,19 @@ data class HudConfig(
         @Volatile private var overlayRunning = false
 
         fun load(context: Context): HudConfig {
-            cachedConfig?.let { return it }
+            cachedConfig?.let { return it.forCurrentOrientation(context) }
             return synchronized(this) {
-                cachedConfig ?: run {
+                cachedConfig?.forCurrentOrientation(context) ?: run {
                     val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                    // Older versions stored one shared position. Use it as the initial value
+                    // for both orientations, then keep the two positions independent.
+                    val legacyX = p.getInt("position_x_dp", 8).coerceAtLeast(0)
+                    val legacyY = p.getInt("position_y_dp", 100).coerceAtLeast(0)
+                    val portraitX = p.getInt("position_portrait_x_dp", legacyX).coerceAtLeast(0)
+                    val portraitY = p.getInt("position_portrait_y_dp", legacyY).coerceAtLeast(0)
+                    val landscapeX = p.getInt("position_landscape_x_dp", legacyX).coerceAtLeast(0)
+                    val landscapeY = p.getInt("position_landscape_y_dp", legacyY).coerceAtLeast(0)
+                    val isLandscape = context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
                     val selected = p.getStringSet("selected_thermal_sensors", emptySet())?.toSet() ?: emptySet()
                     val config = HudConfig(
                         showCpuTemp = p.getBoolean("cpu_temp", false),
@@ -106,8 +143,12 @@ data class HudConfig(
                         cpuAverageVariant = (p.getString("cpu_average_variant", "usr") ?: "usr").normalizedVariant(),
                         gpuAverageVariant = (p.getString("gpu_average_variant", "usr") ?: "usr").normalizedVariant(),
                         lockPosition = p.getBoolean("lock_position", false),
-                        positionXDp = p.getInt("position_x_dp", 8).coerceAtLeast(0),
-                        positionYDp = p.getInt("position_y_dp", 100).coerceAtLeast(0),
+                        positionXDp = if (isLandscape) landscapeX else portraitX,
+                        positionYDp = if (isLandscape) landscapeY else portraitY,
+                        portraitPositionXDp = portraitX,
+                        portraitPositionYDp = portraitY,
+                        landscapePositionXDp = landscapeX,
+                        landscapePositionYDp = landscapeY,
                         overlayPaused = p.getBoolean("overlay_paused", false)
                     )
                     cachedConfig = config
@@ -115,6 +156,13 @@ data class HudConfig(
                 }
             }
         }
+
+        private fun HudConfig.forCurrentOrientation(context: Context): HudConfig =
+            if (context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+                copy(positionXDp = landscapePositionXDp, positionYDp = landscapePositionYDp)
+            } else {
+                copy(positionXDp = portraitPositionXDp, positionYDp = portraitPositionYDp)
+            }
 
         private fun parseSensorNames(raw: String): Map<String, String> = try {
             val json = JSONObject(raw)
